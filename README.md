@@ -1,18 +1,8 @@
 # n8n-nodes-xmemory
 
-This is an n8n community node. It lets you use _app/service name_ in your n8n workflows.
-
-_App/service name_ is _one or two sentences describing the service this node integrates with_.
+Community n8n node for Xmemory `read`, `write`, and `create instance` operations.
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/sustainable-use-license/) workflow automation platform.
-
-[Installation](#installation)
-[Operations](#operations)
-[Credentials](#credentials)
-[Compatibility](#compatibility)
-[Usage](#usage)
-[Resources](#resources)
-[Version history](#version-history)
 
 ## Installation
 
@@ -20,27 +10,30 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 
 ## Operations
 
-_List the operations supported by your node._
+- `Read`: Calls `POST /read` with `instance_id`, `query`, optional `read_id`, and `mode`.
+- `Write`: Calls `POST /write` with `instance_id`, `text`, optional `extract_write_id`, and `extraction_logic`.
+- `Create Instance`: Calls `POST /instance/create` with optional `json_schema` or `yml_schema`.
 
 ## Credentials
 
-_If users need to authenticate with the app/service, provide details here. You should include prerequisites (such as signing up with the service), available authentication methods, and how to set them up._
+- `Base URL`: Xmemory API base URL, for example `https://api.xmemory.ai`.
+- `Bearer Token`: Bearer token used to authenticate against the Xmemory API.
 
 ## Compatibility
 
-_State the minimum n8n version, as well as which versions you test against. You can also include any known version incompatibility issues._
+This package targets the current community-node API version (`n8nNodesApiVersion: 1`). Validate against the n8n version you run in your environment.
 
 ## Usage
 
-_This is an optional section. Use it to help users with any difficult or confusing aspects of the node._
+Create an `Xmemory API` credential, then add the `Xmemory` node to your workflow and choose one of the supported operations.
 
-_By the time users are looking for community nodes, they probably already know n8n basics. But if you expect new users, you can link to the [Try it out](https://docs.n8n.io/try-it-out/) documentation to help them get started._
+For `Create Instance`, set `Schema Format` to match the payload you provide in `Schema Text`.
 
 ## Resources
 
-* [n8n community nodes documentation](https://docs.n8n.io/integrations/#community-nodes)
-* _Link to app/service documentation._
+- [n8n community nodes documentation](https://docs.n8n.io/integrations/#community-nodes)
+- [Xmemory repository](https://github.com/xmemory-ai)
 
 ## Version history
 
-_This is another optional section. If your node has multiple versions, include a short description of available versions and what changed, as well as any compatibility impact._
+- `0.1.0`: Initial Xmemory community node with `read`, `write`, and `create instance` operations.

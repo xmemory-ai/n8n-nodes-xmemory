@@ -3,12 +3,11 @@
     "version": "0.1.0",
     "description": "n8n node for xmemory read/write operations",
     "license": "MIT",
-    "homepage": "https://github.com/xmemory-ai/n8n-nodes-xmemory",
+    "homepage": "https://github.com/xmemory-ai/microproducts/tree/main/n8n/xmemory_connector",
     "keywords": [
         "n8n-community-node-package",
         "n8n",
-        "xmemory",
-        "memory"
+        "xmemory"
     ],
     "author": {
         "name": "Alexander Gusak",
@@ -16,16 +15,16 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/xmemory-ai/n8n-nodes-xmemory"
+        "url": "https://github.com/xmemory-ai/microproducts"
     },
     "scripts": {
-		"build": "n8n-node build",
-		"build:watch": "tsc --watch",
-		"dev": "n8n-node dev",
-		"lint": "n8n-node lint",
-		"lint:fix": "n8n-node lint --fix",
-		"release": "n8n-node release",
-		"prepublishOnly": "n8n-node prerelease"
+        "build": "n8n-node build",
+        "build:watch": "tsc --watch",
+        "dev": "n8n-node dev",
+        "lint": "n8n-node lint",
+        "lint:fix": "n8n-node lint --fix",
+        "release": "n8n-node release",
+        "prepublishOnly": "n8n-node prerelease"
     },
     "files": [
         "dist"
