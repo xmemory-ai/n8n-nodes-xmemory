@@ -294,7 +294,7 @@ export class Xmemory implements INodeType {
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"]}}',
-		description: 'Read, write, and create instance operations for the Xmemory API',
+		description: 'Memory operations via xmemory API',
 		defaults: {
 			name: 'Xmemory',
 		},
