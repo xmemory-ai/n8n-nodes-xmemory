@@ -31,8 +31,9 @@ For `Create Instance`, set `Schema Format` to match the payload you provide in `
 
 ## Resources
 
-- [n8n community nodes documentation](https://docs.n8n.io/integrations/#community-nodes)
+- [tutorial for xmemory usage from n8n](https://xmemory.ai/n8n/)
 - [xmemory documentation](https://xmemory.ai/docs)
+- [n8n community nodes documentation](https://docs.n8n.io/integrations/#community-nodes)
 
 ## Version history
 
