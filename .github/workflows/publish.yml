@@ -30,7 +30,6 @@ jobs:
         run: npm run release
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: "false"
 
       - name: Print published version
         run: echo "Published $(node -p "require('./package.json').version")"
