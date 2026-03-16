@@ -10,7 +10,7 @@ export class XmemoryApi implements ICredentialType {
 
 	displayName = 'Xmemory API';
 
-	icon = 'file:../nodes/Xmemory/xmemory.svg' as const;
+	icon = 'file:../nodes/Xmemory/xmemory-favicon.png' as const;
 
 	documentationUrl = 'https://github.com/xmemory-ai';
 
