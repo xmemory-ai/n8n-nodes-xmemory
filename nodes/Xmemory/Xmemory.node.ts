@@ -290,7 +290,7 @@ export class Xmemory implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Xmemory',
 		name: 'xmemory',
-		icon: 'file:xmemory-favicon.png',
+		icon: 'file:xmemory-favicon.svg',
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"]}}',
