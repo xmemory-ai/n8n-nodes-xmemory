@@ -18,6 +18,9 @@
         "type": "git",
         "url": "https://github.com/xmemory-ai/n8n-nodes-xmemory"
     },
+    "publishConfig": {
+        "access": "public"
+    },
     "scripts": {
         "build": "n8n-node build",
         "build:watch": "tsc --watch",
