@@ -1,6 +1,6 @@
 # n8n-nodes-xmemory
 
-Community n8n node for Xmemory `read`, `write`, and `create instance` operations.
+Community n8n node for xmemory `read`, `write`, and `create instance` operations.
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/sustainable-use-license/) workflow automation platform.
 
@@ -16,8 +16,8 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 
 ## Credentials
 
-- `Base URL`: Xmemory API base URL, for example `https://api.xmemory.ai`.
-- `Bearer Token`: Bearer token used to authenticate against the Xmemory API.
+- `Base URL`: xmemory API base URL, for example `https://api.xmemory.ai`.
+- `Bearer Token`: Bearer token used to authenticate against the xmemory API.
 
 ## Compatibility
 
@@ -25,15 +25,15 @@ This package targets the current community-node API version (`n8nNodesApiVersion
 
 ## Usage
 
-Create an `Xmemory API` credential, then add the `Xmemory` node to your workflow and choose one of the supported operations.
+Create an `xmemory API` credential, then add the `xmemory` node to your workflow and choose one of the supported operations.
 
 For `Create Instance`, set `Schema Format` to match the payload you provide in `Schema Text`.
 
 ## Resources
 
 - [n8n community nodes documentation](https://docs.n8n.io/integrations/#community-nodes)
-- [Xmemory repository](https://github.com/xmemory-ai)
+- [xmemory repository](https://github.com/xmemory-ai)
 
 ## Version history
 
-- `0.1.0`: Initial Xmemory community node with `read`, `write`, and `create instance` operations.
+- `0.1.0`: Initial xmemory community node with `read`, `write`, and `create instance` operations.
