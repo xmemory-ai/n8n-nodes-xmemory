@@ -11,11 +11,14 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       id-token: write   # required for npm provenance
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -25,6 +28,16 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Bump minor version in main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          npm version minor --no-git-tag-version
+          VERSION=$(node -p "require('./package.json').version")
+          git add package.json package-lock.json
+          git diff --cached --quiet || git commit -m "chore: bump version to $VERSION [skip ci]"
+          git push origin main
 
       - name: Release and publish to npm
         run: npm run release
