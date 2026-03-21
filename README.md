@@ -1,40 +1,32 @@
 # n8n-nodes-xmemory
 
-Community n8n node for xmemory `read`, `write`, and `create instance` operations.
+**xmemory** is a memory interface with natural-language inputs and outputs, backed by schema under the hood.
+
+Community n8n node for [xmemory](https://xmemory.ai) `read`, `write`, and `create instance` operations. [This overview](https://xmemory.ai/integration-overview/) gives detailed description of xmemory.
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/sustainable-use-license/) workflow automation platform.
 
 ## Installation
 
-Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes/installation/) in the n8n community nodes documentation.
+Check out [installation guide](https://xmemory.ai/n8n) and register your interest at [xmemory website](https://xmemory.ai) to get an API key.
 
 ## Operations
 
-- `Read`: Calls `POST /read` with `instance_id`, `query`, optional `read_id`, and `mode`.
-- `Write`: Calls `POST /write` with `instance_id`, `text`, optional `extract_write_id`, and `extraction_logic`.
 - `Create Instance`: Calls `POST /instance/create` with optional `json_schema` or `yml_schema`.
+- `Write`: write to memory according to a schema of the instance. `Fast`, `regular` and `deep` modes are supported. As of 2026-03-21, `fast` mode is recommended.
+- `Read`: read from memory using free-form test query. Different modes are supported: `single-answer` (short summary), `raw-tables` (structured SQL-like representation of data), `xresponse` (schema-based structured response).
 
 ## Credentials
 
 - `Base URL`: xmemory API base URL, for example `https://api.xmemory.ai`.
-- `Bearer Token`: Bearer token used to authenticate against the xmemory API.
-
-## Compatibility
-
-This package targets the current community-node API version (`n8nNodesApiVersion: 1`). Validate against the n8n version you run in your environment.
-
-## Usage
-
-Create an `xmemory API` credential, then add the `xmemory` node to your workflow and choose one of the supported operations.
-
-For `Create Instance`, set `Schema Format` to match the payload you provide in `Schema Text`.
+- `Bearer Token`: Bearer token used to authenticate against the xmemory API. Register you interest at [https://xmemory.ai], we will reach out to discuss your scenario and issue an API key.
 
 ## Resources
 
 - [tutorial for xmemory usage from n8n](https://xmemory.ai/n8n/)
-- [xmemory documentation](https://xmemory.ai/docs)
+- [xmemory documentation](https://xmemory.ai/integration-overview/)
 - [n8n community nodes documentation](https://docs.n8n.io/integrations/#community-nodes)
 
-## Version history
+## Compatibility
 
-- `0.1.0`: Initial xmemory community node with `read`, `write`, and `create instance` operations.
+This package targets the current community-node API version (`n8nNodesApiVersion: 1`). Validate against the n8n version you run in your environment.
