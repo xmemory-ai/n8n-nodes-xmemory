@@ -1,6 +1,6 @@
 {
     "name": "n8n-nodes-xmemory",
-    "version": "0.1.2",
+    "version": "0.2.0",
     "description": "n8n node for xmemory read/write operations",
     "license": "MIT",
     "homepage": "https://github.com/xmemory-ai/n8n-nodes-xmemory",
