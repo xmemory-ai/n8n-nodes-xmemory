@@ -20,6 +20,7 @@ type XmemoryOperation = 'read' | 'write' | 'create_instance';
 type XmemoryStatusResponse = IDataObject & {
 	status?: string;
 	error_message?: string;
+	trace_id?: string;
 };
 
 function buildCreateInstanceBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
@@ -45,7 +46,7 @@ function buildReadBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
 	const instanceId = ctx.getNodeParameter('instanceId', itemIndex) as string;
 	const query = ctx.getNodeParameter('query', itemIndex) as string;
 	const mode = ctx.getNodeParameter('mode', itemIndex) as string;
-	const readId = ctx.getNodeParameter('readId', itemIndex) as string;
+	const traceId = ctx.getNodeParameter('traceId', itemIndex) as string;
 
 	const body: IDataObject = {
 		instance_id: instanceId,
@@ -53,8 +54,8 @@ function buildReadBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
 		mode,
 	};
 
-	if (readId.trim() !== '') {
-		body.read_id = readId;
+	if (traceId.trim() !== '') {
+		body.trace_id = traceId;
 	}
 
 	return body;
@@ -64,16 +65,18 @@ function buildWriteBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject 
 	const instanceId = ctx.getNodeParameter('instanceId', itemIndex) as string;
 	const text = ctx.getNodeParameter('text', itemIndex) as string;
 	const extractionLogic = ctx.getNodeParameter('extractionLogic', itemIndex) as string;
-	const extractWriteId = ctx.getNodeParameter('extractWriteId', itemIndex) as string;
+	const traceId = ctx.getNodeParameter('traceId', itemIndex) as string;
+	const diffEngine = ctx.getNodeParameter('diffEngine', itemIndex) as boolean;
 
 	const body: IDataObject = {
 		instance_id: instanceId,
 		text,
 		extraction_logic: extractionLogic,
+		diff_engine: diffEngine,
 	};
 
-	if (extractWriteId.trim() !== '') {
-		body.extract_write_id = extractWriteId;
+	if (traceId.trim() !== '') {
+		body.trace_id = traceId;
 	}
 
 	return body;
@@ -168,11 +171,11 @@ const readFields: INodeProperties[] = [
 		},
 	},
 	{
-		displayName: 'Read ID',
-		name: 'readId',
+		displayName: 'Trace ID',
+		name: 'traceId',
 		type: 'string',
 		default: '',
-		description: 'Optional read ID for tracing',
+		description: 'Optional trace ID for request tracing',
 		displayOptions: {
 			show: {
 				operation: ['read'],
@@ -233,11 +236,23 @@ const writeFields: INodeProperties[] = [
 		},
 	},
 	{
-		displayName: 'Extract/Write ID',
-		name: 'extractWriteId',
+		displayName: 'Trace ID',
+		name: 'traceId',
 		type: 'string',
 		default: '',
-		description: 'Optional extract/write ID for tracing',
+		description: 'Optional trace ID for request tracing',
+		displayOptions: {
+			show: {
+				operation: ['write'],
+			},
+		},
+	},
+	{
+		displayName: 'Diff Engine',
+		name: 'diffEngine',
+		type: 'boolean',
+		default: true,
+		description: 'Whether to use diff engine for write requests',
 		displayOptions: {
 			show: {
 				operation: ['write'],
