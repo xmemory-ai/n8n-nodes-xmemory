@@ -24,35 +24,28 @@ type XmemoryStatusResponse = IDataObject & {
 };
 
 function buildCreateInstanceBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
+	const name = ctx.getNodeParameter('instanceName', itemIndex) as string;
 	const schemaFormat = ctx.getNodeParameter('schemaFormat', itemIndex) as 'json' | 'yml';
 	const schemaText = ctx.getNodeParameter('schemaText', itemIndex) as string;
 
-	if (schemaText.trim() === '') {
-		return {};
+	const body: IDataObject = { name };
+
+	if (schemaText.trim() !== '') {
+		body.instance_schema =
+			schemaFormat === 'json'
+				? { json_schema: { value: schemaText } }
+				: { yml: { value: schemaText } };
 	}
 
-	if (schemaFormat === 'json') {
-		return {
-			json_schema: schemaText,
-		};
-	}
-
-	return {
-		yml_schema: schemaText,
-	};
+	return body;
 }
 
 function buildReadBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
-	const instanceId = ctx.getNodeParameter('instanceId', itemIndex) as string;
 	const query = ctx.getNodeParameter('query', itemIndex) as string;
 	const mode = ctx.getNodeParameter('mode', itemIndex) as string;
 	const traceId = ctx.getNodeParameter('traceId', itemIndex) as string;
 
-	const body: IDataObject = {
-		instance_id: instanceId,
-		query,
-		mode,
-	};
+	const body: IDataObject = { query, mode };
 
 	if (traceId.trim() !== '') {
 		body.trace_id = traceId;
@@ -62,14 +55,12 @@ function buildReadBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
 }
 
 function buildWriteBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
-	const instanceId = ctx.getNodeParameter('instanceId', itemIndex) as string;
 	const text = ctx.getNodeParameter('text', itemIndex) as string;
 	const extractionLogic = ctx.getNodeParameter('extractionLogic', itemIndex) as string;
 	const traceId = ctx.getNodeParameter('traceId', itemIndex) as string;
 	const diffEngine = ctx.getNodeParameter('diffEngine', itemIndex) as boolean;
 
 	const body: IDataObject = {
-		instance_id: instanceId,
 		text,
 		extraction_logic: extractionLogic,
 		diff_engine: diffEngine,
@@ -263,6 +254,32 @@ const writeFields: INodeProperties[] = [
 
 const createInstanceFields: INodeProperties[] = [
 	{
+		displayName: 'Cluster ID',
+		name: 'clusterId',
+		type: 'string',
+		default: '',
+		required: true,
+		description: 'ID of the cluster to create the instance in',
+		displayOptions: {
+			show: {
+				operation: ['create_instance'],
+			},
+		},
+	},
+	{
+		displayName: 'Instance Name',
+		name: 'instanceName',
+		type: 'string',
+		default: '',
+		required: true,
+		description: 'Name for the new Xmemory instance',
+		displayOptions: {
+			show: {
+				operation: ['create_instance'],
+			},
+		},
+	},
+	{
 		displayName: 'Schema Format',
 		name: 'schemaFormat',
 		type: 'options',
@@ -339,13 +356,16 @@ export class Xmemory implements INodeType {
 				let body: IDataObject;
 
 				if (operation === 'write') {
-					endpoint = '/write';
+					const instanceId = this.getNodeParameter('instanceId', itemIndex) as string;
+					endpoint = `/instances/${instanceId}/write`;
 					body = buildWriteBody(this, itemIndex);
 				} else if (operation === 'read') {
-					endpoint = '/read';
+					const instanceId = this.getNodeParameter('instanceId', itemIndex) as string;
+					endpoint = `/instances/${instanceId}/read`;
 					body = buildReadBody(this, itemIndex);
 				} else {
-					endpoint = '/instance/create';
+					const clusterId = this.getNodeParameter('clusterId', itemIndex) as string;
+					endpoint = `/clusters/${clusterId}/instances`;
 					body = buildCreateInstanceBody(this, itemIndex);
 				}
 
