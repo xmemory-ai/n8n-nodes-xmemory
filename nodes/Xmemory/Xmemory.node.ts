@@ -283,16 +283,16 @@ const createInstanceFields: INodeProperties[] = [
 		displayName: 'Schema Format',
 		name: 'schemaFormat',
 		type: 'options',
-		default: 'json',
+		default: 'yml',
 		description: 'Schema payload format sent to Xmemory',
 		options: [
 			{
-				name: 'JSON',
-				value: 'json',
+				name: 'YAML',
+				value: 'yml',
 			},
 			{
-				name: 'YML',
-				value: 'yml',
+				name: 'JSON',
+				value: 'json',
 			},
 		],
 		displayOptions: {
