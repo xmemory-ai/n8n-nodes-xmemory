@@ -19,7 +19,7 @@ Check out [installation guide](https://xmemory.ai/n8n) and register your interes
 ## Credentials
 
 - `Base URL`: xmemory API base URL, for example `https://api.xmemory.ai`.
-- `Bearer Token`: Bearer token used to authenticate against the xmemory API. Register you interest at [https://xmemory.ai], we will reach out to discuss your scenario and issue an API key.
+- `API Key`: API key used to authenticate against the xmemory API. Register you interest at [https://xmemory.ai], we will reach out to discuss your scenario and issue an API key.
 
 ## Resources
 

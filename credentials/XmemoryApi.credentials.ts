@@ -25,7 +25,7 @@ export class XmemoryApi implements ICredentialType {
 			description: 'Base URL of the Xmemory API',
 		},
 		{
-			displayName: 'Bearer Token',
+			displayName: 'API Key',
 			name: 'token',
 			type: 'string',
 			typeOptions: {
@@ -33,7 +33,7 @@ export class XmemoryApi implements ICredentialType {
 			},
 			default: '',
 			required: true,
-			description: 'Bearer token used for Xmemory API authentication',
+			description: 'API key used for Xmemory API authentication',
 		},
 	];
 
