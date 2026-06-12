@@ -49,7 +49,7 @@ export class XmemoryApi implements ICredentialType {
 	test: ICredentialTestRequest = {
 		request: {
 			baseURL: '={{$credentials.baseUrl}}',
-			url: '/config',
+			url: '/runtime',
 			method: 'GET',
 		},
 	};
