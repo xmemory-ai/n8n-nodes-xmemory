@@ -50,12 +50,49 @@ function buildCreateInstanceBody(ctx: IExecuteFunctions, itemIndex: number): IDa
 	};
 }
 
+function buildReadScope(ctx: IExecuteFunctions, itemIndex: number): IDataObject | undefined {
+	const scopeObjectsParam = ctx.getNodeParameter('scopeObjects', itemIndex, {}) as IDataObject;
+	const entries = (scopeObjectsParam.object as IDataObject[] | undefined) ?? [];
+	if (entries.length === 0) {
+		return undefined;
+	}
+
+	const objects = entries.map((entry) => {
+		const obj: IDataObject = { type: (entry.type as string) ?? '' };
+		const xuid = ((entry.xuid as string) ?? '').trim();
+		if (xuid !== '') {
+			obj.xuid = xuid;
+			return obj;
+		}
+		const keyFields = (entry.keyFields as IDataObject | undefined) ?? {};
+		const fieldEntries = (keyFields.field as IDataObject[] | undefined) ?? [];
+		const key: IDataObject = {};
+		for (const field of fieldEntries) {
+			key[field.name as string] = field.value;
+		}
+		// Identify by primary key; an object with neither xuid nor key is left as
+		// just `type` so the server returns the documented 400 validation error.
+		if (Object.keys(key).length > 0) {
+			obj.key = key;
+		}
+		return obj;
+	});
+
+	const includeRelations = ctx.getNodeParameter('scopeIncludeRelations', itemIndex, false) as boolean;
+	return { objects, include_relations: includeRelations };
+}
+
 function buildReadBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
 	const query = ctx.getNodeParameter('query', itemIndex) as string;
 	const mode = ctx.getNodeParameter('mode', itemIndex) as string;
 	const traceId = ctx.getNodeParameter('traceId', itemIndex) as string;
 
 	const body: IDataObject = { query, mode };
+
+	const scope = buildReadScope(ctx, itemIndex);
+	if (scope !== undefined) {
+		body.scope = scope;
+	}
 
 	if (traceId.trim() !== '') {
 		body.trace_id = traceId;
@@ -165,6 +202,89 @@ const readFields: INodeProperties[] = [
 				value: 'xresponse',
 			},
 		],
+		displayOptions: {
+			show: {
+				operation: ['read'],
+			},
+		},
+	},
+	{
+		displayName: 'Scope Objects',
+		name: 'scopeObjects',
+		type: 'fixedCollection',
+		typeOptions: {
+			multipleValues: true,
+		},
+		default: {},
+		description:
+			'Restrict the read to these concrete objects. Leave empty for an unscoped read over the whole instance.',
+		displayOptions: {
+			show: {
+				operation: ['read'],
+			},
+		},
+		options: [
+			{
+				name: 'object',
+				displayName: 'Object',
+				values: [
+					{
+						displayName: 'Type',
+						name: 'type',
+						type: 'string',
+						default: '',
+						required: true,
+						description: 'Object type: PascalCase class name or snake_case table name',
+					},
+					{
+						displayName: 'Xuid',
+						name: 'xuid',
+						type: 'string',
+						default: '',
+						description: 'Identify the object by its xuid. Leave empty to use Key Fields instead.',
+					},
+					{
+						displayName: 'Key Fields',
+						name: 'keyFields',
+						type: 'fixedCollection',
+						typeOptions: {
+							multipleValues: true,
+						},
+						default: {},
+						description:
+							'Identify the object by its user-defined primary key (one entry per PK field). Ignored when Xuid is set.',
+						options: [
+							{
+								name: 'field',
+								displayName: 'Field',
+								values: [
+									{
+										displayName: 'Name',
+										name: 'name',
+										type: 'string',
+										default: '',
+									},
+									{
+										displayName: 'Value',
+										name: 'value',
+										type: 'string',
+										default: '',
+									},
+								],
+							},
+						],
+					},
+				],
+			},
+		],
+	},
+	{
+		displayName: 'Include Relations',
+		name: 'scopeIncludeRelations',
+		type: 'boolean',
+		default: false,
+		description:
+			'Whether to also expose relations among the in-scope objects (only used when Scope Objects are set)',
 		displayOptions: {
 			show: {
 				operation: ['read'],
