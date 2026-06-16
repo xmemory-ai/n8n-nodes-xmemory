@@ -1,17 +1,13 @@
 name: Publish
 
 on:
-  push:
-    tags:
-      - '*.*.*'
-      - 'v*.*.*'
   workflow_dispatch:
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write   # required to push the version tag
       id-token: write   # required for npm provenance
 
     steps:
@@ -26,23 +22,34 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Read version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Fail if tag already exists
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "::error::Tag $VERSION already exists — bump the version in package.json (via PR) before publishing."
+            exit 1
+          fi
+          echo "Tag $VERSION does not exist; proceeding to publish."
+
       - name: Install dependencies
         run: npm ci
-
-      - name: Bump minor version in main
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          npm version minor --no-git-tag-version
-          VERSION=$(node -p "require('./package.json').version")
-          git add package.json package-lock.json
-          git diff --cached --quiet || git commit -m "chore: bump version to $VERSION [skip ci]"
-          git push origin main
 
       - name: Release and publish to npm
         run: npm run release
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Tag the published version
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$VERSION"
+          git push origin "$VERSION"
+
       - name: Print published version
-        run: echo "Published $(node -p "require('./package.json').version")"
+        run: echo "Published ${{ steps.version.outputs.version }}"
