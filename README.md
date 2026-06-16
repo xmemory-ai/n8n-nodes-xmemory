@@ -30,3 +30,12 @@ Check out [installation guide](https://xmemory.ai/n8n) and register your interes
 ## Compatibility
 
 This package targets the current community-node API version (`n8nNodesApiVersion: 1`). Validate against the n8n version you run in your environment.
+
+## Releasing
+
+Releases are manual and version-driven:
+
+1. Bump the `version` in `package.json` via a pull request and merge it to `main`.
+2. Run the **Publish** workflow (`Actions` → `Publish` → `Run workflow`, or `gh workflow run publish.yml`).
+
+The workflow publishes the current `package.json` version to npm and then pushes a matching git tag (`X.Y.Z`). If a tag for that version already exists, the run fails — bump the version first.
