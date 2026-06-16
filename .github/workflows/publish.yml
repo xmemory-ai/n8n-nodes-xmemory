@@ -46,10 +46,15 @@ jobs:
       - name: Tag the published version
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          # `npm run release` may already create the tag (release-it); only tag/push if it didn't.
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already on remote; nothing to push."
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "$VERSION"
-          git push origin "$VERSION"
+          git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null || git tag "$VERSION"
+          git push origin "refs/tags/$VERSION"
 
       - name: Print published version
         run: echo "Published ${{ steps.version.outputs.version }}"
