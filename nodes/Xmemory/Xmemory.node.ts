@@ -57,22 +57,18 @@ function buildReadScope(ctx: IExecuteFunctions, itemIndex: number): IDataObject 
 		return undefined;
 	}
 
-	// Each object is serialized to the API's identity-ADT wire shape:
-	// `{type, key: {xuid}}` or `{type, key: {key: {...}}}`.
+	// Each object is serialized to the API's identity wire shape:
+	// `{type, key: {key: {...}}}` (by the object's user-defined primary key).
 	const objects = entries.map((entry) => {
 		const type = (entry.type as string) ?? '';
-		const xuid = ((entry.xuid as string) ?? '').trim();
-		if (xuid !== '') {
-			return { type, key: { xuid } };
-		}
 		const keyFields = (entry.keyFields as IDataObject | undefined) ?? {};
 		const fieldEntries = (keyFields.field as IDataObject[] | undefined) ?? [];
 		const key: IDataObject = {};
 		for (const field of fieldEntries) {
 			key[field.name as string] = field.value;
 		}
-		// Identify by primary key; an object with neither xuid nor key omits `key`
-		// so the server returns the documented 400 validation error.
+		// An object with no key fields omits `key` so the server returns the
+		// documented 400 validation error.
 		return Object.keys(key).length > 0 ? { type, key: { key } } : { type };
 	});
 
@@ -235,13 +231,6 @@ const readFields: INodeProperties[] = [
 						description: 'Object type: PascalCase class name or snake_case table name',
 					},
 					{
-						displayName: 'Xuid',
-						name: 'xuid',
-						type: 'string',
-						default: '',
-						description: 'Identify the object by its xuid. Leave empty to use Key Fields instead.',
-					},
-					{
 						displayName: 'Key Fields',
 						name: 'keyFields',
 						type: 'fixedCollection',
@@ -249,8 +238,9 @@ const readFields: INodeProperties[] = [
 							multipleValues: true,
 						},
 						default: {},
+						required: true,
 						description:
-							'Identify the object by its user-defined primary key (one entry per PK field). Ignored when Xuid is set.',
+							'Identify the object by its user-defined primary key (one entry per PK field).',
 						options: [
 							{
 								name: 'field',
