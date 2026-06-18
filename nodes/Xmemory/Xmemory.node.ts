@@ -57,12 +57,13 @@ function buildReadScope(ctx: IExecuteFunctions, itemIndex: number): IDataObject 
 		return undefined;
 	}
 
+	// Each object is serialized to the API's identity-ADT wire shape:
+	// `{type, key: {xuid}}` or `{type, key: {key: {...}}}`.
 	const objects = entries.map((entry) => {
-		const obj: IDataObject = { type: (entry.type as string) ?? '' };
+		const type = (entry.type as string) ?? '';
 		const xuid = ((entry.xuid as string) ?? '').trim();
 		if (xuid !== '') {
-			obj.xuid = xuid;
-			return obj;
+			return { type, key: { xuid } };
 		}
 		const keyFields = (entry.keyFields as IDataObject | undefined) ?? {};
 		const fieldEntries = (keyFields.field as IDataObject[] | undefined) ?? [];
@@ -70,16 +71,13 @@ function buildReadScope(ctx: IExecuteFunctions, itemIndex: number): IDataObject 
 		for (const field of fieldEntries) {
 			key[field.name as string] = field.value;
 		}
-		// Identify by primary key; an object with neither xuid nor key is left as
-		// just `type` so the server returns the documented 400 validation error.
-		if (Object.keys(key).length > 0) {
-			obj.key = key;
-		}
-		return obj;
+		// Identify by primary key; an object with neither xuid nor key omits `key`
+		// so the server returns the documented 400 validation error.
+		return Object.keys(key).length > 0 ? { type, key: { key } } : { type };
 	});
 
 	const includeRelations = ctx.getNodeParameter('scopeIncludeRelations', itemIndex, false) as boolean;
-	return { objects, include_relations: includeRelations };
+	return { objects, relations_scope: includeRelations ? 'all_relations' : 'no_relations' };
 }
 
 function buildReadBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
