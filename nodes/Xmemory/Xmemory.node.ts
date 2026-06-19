@@ -285,7 +285,7 @@ const createInstanceFields: INodeProperties[] = [
 				displayName: 'By ID',
 				name: 'id',
 				type: 'string',
-				placeholder: '9bd52384-e0bc-47b3-9451-98a320b8b559',
+				placeholder: 'e.g. 123e4567-e89b-12d3-a456-426614174000',
 				validation: [
 					{
 						type: 'regex',
