@@ -1,6 +1,8 @@
 node_modules/
 dist/
 
+.env
+
 .vscode/
 
 n8n-nodes-xmemory-0.1.0.tgz
