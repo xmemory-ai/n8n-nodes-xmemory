@@ -4,7 +4,9 @@ import {
 	type IDataObject,
 	type IExecuteFunctions,
 	type IHttpRequestOptions,
+	type ILoadOptionsFunctions,
 	type INodeExecutionData,
+	type INodeListSearchResult,
 	type INodeProperties,
 	type INodeType,
 	type INodeTypeDescription,
@@ -28,16 +30,24 @@ function buildCreateInstanceBody(ctx: IExecuteFunctions, itemIndex: number): IDa
 	const schemaFormat = ctx.getNodeParameter('schemaFormat', itemIndex) as 'json' | 'yml';
 	const schemaText = ctx.getNodeParameter('schemaText', itemIndex) as string;
 
-	const body: IDataObject = { name };
-
-	if (schemaText.trim() !== '') {
-		body.instance_schema =
-			schemaFormat === 'json'
-				? { json_schema: { value: schemaText } }
-				: { yml: { value: schemaText } };
+	// Xmemory requires a valid XMD schema to create an instance; an empty schema is
+	// rejected by the API ("Provide a valid XMD schema"). Fail early with a clear message
+	// instead of forwarding an empty body that the server bounces with a 422.
+	if (schemaText.trim() === '') {
+		throw new NodeOperationError(
+			ctx.getNode(),
+			'Schema Text is required: Xmemory needs a valid XMD schema to create an instance.',
+			{ itemIndex },
+		);
 	}
 
-	return body;
+	return {
+		name,
+		instance_schema:
+			schemaFormat === 'json'
+				? { json_schema: { value: schemaText } }
+				: { yml: { value: schemaText } },
+	};
 }
 
 function buildReadBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
@@ -63,7 +73,7 @@ function buildWriteBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject 
 	const body: IDataObject = {
 		text,
 		extraction_logic: extractionLogic,
-		diff_engine: diffEngine,
+		use_diff_engine: diffEngine,
 	};
 
 	if (traceId.trim() !== '') {
@@ -107,7 +117,7 @@ const instanceIdProperty: INodeProperties = {
 	type: 'string',
 	default: '',
 	required: true,
-	description: 'Xmemory instance ID',
+	description: 'ID of the Xmemory instance',
 };
 
 const readFields: INodeProperties[] = [
@@ -204,16 +214,12 @@ const writeFields: INodeProperties[] = [
 		displayName: 'Extraction Logic',
 		name: 'extractionLogic',
 		type: 'options',
-		default: 'deep',
+		default: 'fast',
 		description: 'Extraction quality/performance mode',
 		options: [
 			{
 				name: 'Deep',
 				value: 'deep',
-			},
-			{
-				name: 'Regular',
-				value: 'regular',
 			},
 			{
 				name: 'Fast',
@@ -254,17 +260,43 @@ const writeFields: INodeProperties[] = [
 
 const createInstanceFields: INodeProperties[] = [
 	{
-		displayName: 'Cluster ID',
+		displayName: 'Cluster',
 		name: 'clusterId',
-		type: 'string',
-		default: '',
+		type: 'resourceLocator',
+		default: { mode: 'list', value: '' },
 		required: true,
-		description: 'ID of the cluster to create the instance in',
+		description: 'Cluster to create the instance in. Pick from the list (shows cluster names) or paste a cluster ID.',
 		displayOptions: {
 			show: {
 				operation: ['create_instance'],
 			},
 		},
+		modes: [
+			{
+				displayName: 'From List',
+				name: 'list',
+				type: 'list',
+				typeOptions: {
+					searchListMethod: 'searchClusters',
+					searchable: false,
+				},
+			},
+			{
+				displayName: 'By ID',
+				name: 'id',
+				type: 'string',
+				placeholder: '9bd52384-e0bc-47b3-9451-98a320b8b559',
+				validation: [
+					{
+						type: 'regex',
+						properties: {
+							regex: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+							errorMessage: 'Enter a valid cluster ID (UUID)',
+						},
+					},
+				],
+			},
+		],
 	},
 	{
 		displayName: 'Instance Name',
@@ -309,7 +341,8 @@ const createInstanceFields: INodeProperties[] = [
 			rows: 10,
 		},
 		default: '',
-		description: 'JSON/YML schema content. Leave empty to create an instance with an empty schema.',
+		required: true,
+		description: 'XMD schema content in the selected format. Xmemory requires a valid schema to create an instance.',
 		displayOptions: {
 			show: {
 				operation: ['create_instance'],
@@ -326,7 +359,7 @@ export class Xmemory implements INodeType {
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"]}}',
-		description: 'Memory operations via xmemory API',
+		description: 'Memory operations via Xmemory API',
 		defaults: {
 			name: 'Xmemory',
 		},
@@ -340,6 +373,30 @@ export class Xmemory implements INodeType {
 			},
 		],
 		properties: [operationProperty, ...readFields, ...writeFields, ...createInstanceFields],
+	};
+
+	methods = {
+		listSearch: {
+			// Backs the cluster resourceLocator "From List" mode: shows each cluster's name
+			// to the user while the selected value is the cluster id used in the request URL.
+			async searchClusters(this: ILoadOptionsFunctions): Promise<INodeListSearchResult> {
+				const credentials = (await this.getCredentials('xmemoryApi')) as XmemoryCredentials;
+				const baseUrl = credentials.baseUrl.replace(/\/$/, '');
+
+				const response = (await this.helpers.httpRequestWithAuthentication.call(
+					this,
+					'xmemoryApi',
+					{ method: 'GET', url: `${baseUrl}/clusters`, json: true },
+				)) as { items?: Array<{ id: string; name?: string }> };
+
+				return {
+					results: (response.items ?? []).map((cluster) => ({
+						name: cluster.name || cluster.id,
+						value: cluster.id,
+					})),
+				};
+			},
+		},
 	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
@@ -364,7 +421,20 @@ export class Xmemory implements INodeType {
 					endpoint = `/instances/${instanceId}/read`;
 					body = buildReadBody(this, itemIndex);
 				} else {
-					const clusterId = this.getNodeParameter('clusterId', itemIndex) as string;
+					// clusterId is a resourceLocator; extractValue resolves both modes
+					// ("From List" and "By ID") down to the cluster id string.
+					const clusterId = this.getNodeParameter('clusterId', itemIndex, '', {
+						extractValue: true,
+					}) as string;
+					// Guard against an empty id: without this the request would be sent to
+					// `/clusters//instances`, which the API answers with a confusing 404.
+					if (clusterId.trim() === '') {
+						throw new NodeOperationError(
+							this.getNode(),
+							'No cluster selected. Choose a cluster from the list or provide a cluster ID.',
+							{ itemIndex },
+						);
+					}
 					endpoint = `/clusters/${clusterId}/instances`;
 					body = buildCreateInstanceBody(this, itemIndex);
 				}

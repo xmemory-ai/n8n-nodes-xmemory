@@ -12,8 +12,8 @@ Check out [installation guide](https://xmemory.ai/n8n) and register your interes
 
 ## Operations
 
-- `Create Instance`: Calls `POST /clusters/{cluster_id}/instances`. Requires **Cluster ID**, **Instance Name**, and an optional schema (JSON or YAML).
-- `Write`: Calls `POST /instances/{instance_id}/write`. Writes text into memory using the instance schema. `Fast`, `regular`, and `deep` extraction modes are supported. Optionally pass a **Trace ID** and toggle **Diff Engine**.
+- `Create Instance`: Calls `POST /clusters/{cluster_id}/instances`. Pick a **Cluster** (from the list by name, or by ID), and provide an **Instance Name** and a valid XMD **Schema** (JSON or YAML). Xmemory requires a schema to create an instance.
+- `Write`: Calls `POST /instances/{instance_id}/write`. Writes text into memory using the instance schema. `Fast` (default) and `deep` extraction modes are supported. Optionally pass a **Trace ID** and toggle **Diff Engine**.
 - `Read`: Calls `POST /instances/{instance_id}/read`. Queries memory using a free-form natural-language query. Supported modes: `single-answer` (short summary), `raw-tables` (structured SQL-like representation), `xresponse` (schema-based structured response). Optionally pass a **Trace ID**.
 
 ## Credentials
