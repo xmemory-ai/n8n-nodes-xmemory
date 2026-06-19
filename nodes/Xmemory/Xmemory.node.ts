@@ -230,7 +230,7 @@ const readFields: INodeProperties[] = [
 						default: {},
 						required: true,
 						description:
-							'Identify the object by its user-defined primary key (one entry per PK field).',
+							'Identify the object by its user-defined primary key (one entry per PK field)',
 						options: [
 							{
 								name: 'field',
