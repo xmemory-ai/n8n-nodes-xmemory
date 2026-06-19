@@ -62,8 +62,8 @@ function buildReadScope(ctx: IExecuteFunctions, itemIndex: number): IDataObject 
 		return Object.keys(key).length > 0 ? { type, key: { key } } : { type };
 	});
 
-	const includeRelations = ctx.getNodeParameter('scopeIncludeRelations', itemIndex, false) as boolean;
-	return { objects, relations_scope: includeRelations ? 'all_relations' : 'no_relations' };
+	const relationsScope = ctx.getNodeParameter('relationsScope', itemIndex, 'no_relations') as string;
+	return { objects, relations_scope: relationsScope };
 }
 
 function buildReadBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
@@ -257,12 +257,23 @@ const readFields: INodeProperties[] = [
 		],
 	},
 	{
-		displayName: 'Include Relations',
-		name: 'scopeIncludeRelations',
-		type: 'boolean',
-		default: false,
-		description:
-			'Whether to also expose relations among the in-scope objects (only used when Scope Objects are set)',
+		displayName: 'Relations Scope',
+		name: 'relationsScope',
+		type: 'options',
+		default: 'no_relations',
+		options: [
+			{
+				name: 'No Relations',
+				value: 'no_relations',
+				description: 'Expose the in-scope objects only',
+			},
+			{
+				name: 'All Relations',
+				value: 'all_relations',
+				description: 'Also expose the relations among the in-scope objects',
+			},
+		],
+		description: 'Which relations a scoped read may traverse (only used when Scope Objects are set)',
 		displayOptions: {
 			show: {
 				operation: ['read'],
