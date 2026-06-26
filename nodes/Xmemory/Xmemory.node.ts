@@ -19,10 +19,23 @@ type XmemoryCredentials = {
 
 type XmemoryOperation = 'read' | 'write' | 'create_instance';
 
-type XmemoryStatusResponse = IDataObject & {
-	status?: string;
-	error_message?: string;
-	trace_id?: string;
+// xmemory wraps every endpoint response in an ApiResponse envelope:
+// `{ids, items, errors, console_url}`. A successful call comes back as HTTP 2xx
+// with an empty `errors` list and the operation payload in `items`; failures
+// arrive as HTTP error status codes (and may also be described in `errors`).
+type XmemoryApiError = {
+	code?: string;
+	message?: string;
+	field?: string;
+	resource_id?: string;
+	details?: IDataObject;
+};
+
+type XmemoryApiResponse = IDataObject & {
+	ids?: string[];
+	items?: IDataObject[];
+	errors?: XmemoryApiError[];
+	console_url?: string | null;
 };
 
 function buildCreateInstanceBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
@@ -569,20 +582,39 @@ export class Xmemory implements INodeType {
 					this,
 					'xmemoryApi',
 					requestOptions,
-				)) as XmemoryStatusResponse;
+				)) as XmemoryApiResponse;
 
-				if (response.status === 'error') {
+				// Surface any problem reported inside the envelope. HTTP error statuses are
+				// already thrown by httpRequestWithAuthentication and handled in the catch
+				// below; this covers an envelope that carries `errors` alongside a 2xx status.
+				const errors = response.errors ?? [];
+				if (errors.length > 0) {
+					const firstError = errors[0];
 					throw new NodeOperationError(
 						this.getNode(),
-						response.error_message || `Xmemory ${operation} request failed`,
+						firstError?.message || firstError?.code || `Xmemory ${operation} request failed`,
 						{ itemIndex },
 					);
 				}
 
-				returnData.push({
-					json: response,
-					pairedItem: { item: itemIndex },
-				});
+				// Unwrap the envelope so downstream nodes receive the operation payload
+				// (ReadResponse / WriteResponse / InstanceResponse) directly. read, write
+				// and create_instance each return exactly one item; fall back to the whole
+				// envelope if `items` is unexpectedly empty so nothing is dropped silently.
+				const payloadItems = response.items ?? [];
+				if (payloadItems.length === 0) {
+					returnData.push({ json: response, pairedItem: { item: itemIndex } });
+				} else {
+					for (const item of payloadItems) {
+						// The deep-link `console_url` lives on the envelope; fold it into any
+						// item that doesn't already carry one (e.g. create_instance).
+						const json: IDataObject =
+							item.console_url == null && response.console_url != null
+								? { ...item, console_url: response.console_url }
+								: item;
+						returnData.push({ json, pairedItem: { item: itemIndex } });
+					}
+				}
 			} catch (error) {
 				if (this.continueOnFail()) {
 					returnData.push({
