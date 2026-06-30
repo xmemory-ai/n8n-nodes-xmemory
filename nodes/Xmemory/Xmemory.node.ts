@@ -38,6 +38,89 @@ type XmemoryApiResponse = IDataObject & {
 	console_url?: string | null;
 };
 
+// Turn a structured xmemory error into a human-legible message. The accounts API
+// reports failures as `{errors:[{code, message, details?}]}`; for the non-retryable
+// billing failures (HTTP 402 QUOTA_EXCEEDED / TRIAL_ENDED) and the velocity limit
+// (HTTP 429 RATE_LIMITED) we append a short hint built from `code`/`details` so the
+// workflow author sees *why* the call failed instead of a bare HTTP status. We only
+// clarify these errors here and deliberately add no retry logic of our own.
+function formatXmemoryError(error: XmemoryApiError | undefined, operation?: XmemoryOperation): string {
+	const fallback = operation ? `Xmemory ${operation} request failed` : 'Xmemory request failed';
+	if (error === undefined) {
+		return fallback;
+	}
+
+	const base =
+		(typeof error.message === 'string' && error.message) ||
+		(typeof error.code === 'string' && error.code) ||
+		fallback;
+	const details = error.details ?? {};
+
+	switch (error.code) {
+		case 'QUOTA_EXCEEDED': {
+			const period =
+				details.kind === 'monthly_quota_exceeded'
+					? 'monthly'
+					: details.kind === 'daily_quota_exceeded'
+						? 'daily'
+						: undefined;
+			const retryAfter =
+				typeof details.retry_after_seconds === 'number' ? details.retry_after_seconds : undefined;
+			const hint = [
+				'quota exceeded',
+				period !== undefined ? ` — ${period} limit` : '',
+				retryAfter !== undefined ? `; retry after ${retryAfter}s` : '',
+			].join('');
+			return `${base} (${hint})`;
+		}
+		case 'TRIAL_ENDED':
+			return `${base} (trial ended — subscribe to continue)`;
+		case 'RATE_LIMITED':
+			return `${base} (rate limited — too many requests, slow down before retrying)`;
+		default:
+			return base;
+	}
+}
+
+// The HTTP helper throws on 4xx/5xx, and depending on the n8n version the parsed
+// xmemory envelope can land in a few different places on the thrown error. Probe the
+// known locations and return the structured errors if one carries a `code`.
+function extractXmemoryErrors(error: unknown): XmemoryApiError[] | undefined {
+	if (typeof error !== 'object' || error === null) {
+		return undefined;
+	}
+
+	const err = error as {
+		errors?: unknown;
+		body?: unknown;
+		error?: unknown;
+		response?: { body?: unknown; data?: unknown };
+		cause?: { response?: { data?: unknown } };
+		context?: { data?: unknown };
+	};
+	const candidates: unknown[] = [
+		err,
+		err.context?.data,
+		err.response?.body,
+		err.response?.data,
+		err.cause?.response?.data,
+		err.error,
+		err.body,
+	];
+
+	for (const candidate of candidates) {
+		if (typeof candidate !== 'object' || candidate === null) {
+			continue;
+		}
+		const errors = (candidate as XmemoryApiResponse).errors;
+		if (Array.isArray(errors) && errors.length > 0 && typeof errors[0]?.code === 'string') {
+			return errors;
+		}
+	}
+
+	return undefined;
+}
+
 function buildCreateInstanceBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
 	const name = ctx.getNodeParameter('instanceName', itemIndex) as string;
 	const schemaFormat = ctx.getNodeParameter('schemaFormat', itemIndex) as 'json' | 'yml';
@@ -536,8 +619,10 @@ export class Xmemory implements INodeType {
 		const returnData: INodeExecutionData[] = [];
 
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+			// Hoisted so the catch block can name the operation when formatting errors.
+			let operation: XmemoryOperation | undefined;
 			try {
-				const operation = this.getNodeParameter('operation', itemIndex) as XmemoryOperation;
+				operation = this.getNodeParameter('operation', itemIndex) as XmemoryOperation;
 				const credentials = (await this.getCredentials('xmemoryApi')) as XmemoryCredentials;
 
 				const baseUrl = credentials.baseUrl.replace(/\/$/, '');
@@ -589,12 +674,9 @@ export class Xmemory implements INodeType {
 				// below; this covers an envelope that carries `errors` alongside a 2xx status.
 				const errors = response.errors ?? [];
 				if (errors.length > 0) {
-					const firstError = errors[0];
-					throw new NodeOperationError(
-						this.getNode(),
-						firstError?.message || firstError?.code || `Xmemory ${operation} request failed`,
-						{ itemIndex },
-					);
+					throw new NodeOperationError(this.getNode(), formatXmemoryError(errors[0], operation), {
+						itemIndex,
+					});
 				}
 
 				// Unwrap the envelope so downstream nodes receive the operation payload
@@ -616,11 +698,18 @@ export class Xmemory implements INodeType {
 					}
 				}
 			} catch (error) {
+				// Prefer the legible, structured xmemory message when the failure carries one.
+				const structuredErrors = extractXmemoryErrors(error);
+				const message =
+					structuredErrors !== undefined
+						? formatXmemoryError(structuredErrors[0], operation)
+						: (error as Error).message;
+
 				if (this.continueOnFail()) {
 					returnData.push({
 						json: {
 							status: 'error',
-							error: (error as Error).message,
+							error: message,
 						},
 						pairedItem: { item: itemIndex },
 					});
@@ -629,6 +718,14 @@ export class Xmemory implements INodeType {
 
 				if (error instanceof NodeOperationError) {
 					throw error;
+				}
+
+				// When the upstream HTTP error carries a structured xmemory envelope (e.g. a 402
+				// QUOTA_EXCEEDED / TRIAL_ENDED, or a 429 RATE_LIMITED), surface the legible message
+				// instead of the bare HTTP error. These are non-retryable by contract; we only
+				// clarify them and add no retry logic of our own.
+				if (structuredErrors !== undefined) {
+					throw new NodeOperationError(this.getNode(), message, { itemIndex });
 				}
 
 				throw new NodeOperationError(this.getNode(), error as Error, { itemIndex });

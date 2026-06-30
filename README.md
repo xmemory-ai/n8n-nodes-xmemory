@@ -18,6 +18,16 @@ Check out [installation guide](https://xmemory.ai/n8n) and register your interes
 
 Every operation returns the xmemory API payload directly: the response envelope (`{ids, items, errors, console_url}`) is unwrapped, so downstream nodes receive the operation result (read result, `write_id`, created instance, …). Errors are raised as node errors.
 
+### How account errors surface
+
+When the xmemory accounts API rejects a call, the node turns the structured error envelope (`errors[0].code` / `details`) into a readable node-error message rather than a bare HTTP status:
+
+- **Quota exhausted** (`HTTP 402`, code `QUOTA_EXCEEDED`): the message notes the daily or monthly limit and, when the server provides one, a `retry after Ns` hint. This is **not** retried automatically — the tenant has used up its plan allowance.
+- **Trial ended / subscription lapsed** (`HTTP 402`, code `TRIAL_ENDED`): the message hints to subscribe to continue. Not retryable.
+- **Rate limited** (`HTTP 429`, code `RATE_LIMITED`): a genuine velocity limit; the message labels it as such. n8n's HTTP layer may itself retry `429`s, but the node adds no extra retry logic.
+
+If you enable workflow-level **Retry On Fail**, note that quota and trial errors are not transient and will keep failing until the underlying account state changes.
+
 ## Credentials
 
 - `Base URL`: xmemory API base URL, for example `https://api.xmemory.ai`.
