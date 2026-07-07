@@ -1,4 +1,5 @@
 import {
+	NodeApiError,
 	NodeConnectionTypes,
 	NodeOperationError,
 	type IDataObject,
@@ -10,6 +11,7 @@ import {
 	type INodeProperties,
 	type INodeType,
 	type INodeTypeDescription,
+	type JsonObject,
 } from 'n8n-workflow';
 
 type XmemoryCredentials = {
@@ -722,13 +724,13 @@ export class Xmemory implements INodeType {
 
 				// When the upstream HTTP error carries a structured xmemory envelope (e.g. a 402
 				// QUOTA_EXCEEDED / TRIAL_ENDED, or a 429 RATE_LIMITED), surface the legible message
-				// instead of the bare HTTP error. These are non-retryable by contract; we only
-				// clarify them and add no retry logic of our own.
+				// instead of the bare HTTP error while keeping the HTTP status/body via NodeApiError.
+				// These are non-retryable by contract; we only clarify them and add no retry logic.
 				if (structuredErrors !== undefined) {
-					throw new NodeOperationError(this.getNode(), message, { itemIndex });
+					throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex, message });
 				}
 
-				throw new NodeOperationError(this.getNode(), error as Error, { itemIndex });
+				throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex });
 			}
 		}
 
