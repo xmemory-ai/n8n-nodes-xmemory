@@ -176,3 +176,30 @@ export const postFields: INodeProperties[] = [
   All" is `false`
 - Don't forget to mark required properties as `required: true`
 - Use camelCase for property names
+
+## Error handling
+- Wrap **HTTP/API failures in `NodeApiError`**, not `NodeOperationError`.
+  `NodeApiError` preserves the HTTP status code and response body so n8n's
+  error UI surfaces them. Pass the raw error as the second argument (a
+  `JsonObject`); override the surfaced text with the `message` option when you
+  have a more legible one:
+  `throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex, message })`.
+- Use `NodeOperationError` only for **genuine config/operation errors** whose
+  second argument is a string message (e.g. "No cluster selected", missing
+  required parameter) — not for wrapping a caught HTTP error.
+- `npm run check:codex` enforces this: it flags any `NodeOperationError` whose
+  message argument is a caught error object. If a case is legitimately a
+  non-HTTP error, opt out on that line with
+  `// codex-check: allow-node-operation-error`.
+
+## Codex file (`*.node.json`)
+The codex file sits next to the node (`X.node.ts` → `X.node.json`) and is not
+covered by `n8n-node lint`, so `npm run check:codex` validates it:
+- `node` must be the **fully-qualified identifier** `<package-name>.<nodeName>`,
+  where `<nodeName>` is the `name` field of the `INodeTypeDescription`
+  (e.g. `n8n-nodes-xmemory.xmemory`), **not** just the package name.
+- `categories` entries must come from n8n's allowed set (`Data & Storage`,
+  `Finance & Accounting`, `Marketing & Content`, `Productivity`,
+  `Miscellaneous`, `Sales`, `Development`, `Analytics`, `Communication`,
+  `Utility`). Unrecognised values are silently dropped by the UI.
+- Run `npm run check:codex` before submitting the package for n8n verification.

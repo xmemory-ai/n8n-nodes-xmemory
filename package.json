@@ -27,6 +27,7 @@
         "dev": "n8n-node dev",
         "lint": "n8n-node lint",
         "lint:fix": "n8n-node lint --fix",
+        "check:codex": "node scripts/check-codex.mjs",
         "release": "n8n-node release",
         "prepublishOnly": "n8n-node prerelease"
     },
