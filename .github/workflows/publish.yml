@@ -38,6 +38,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run codex check
+        run: npm run check:codex
+
       - name: Release and publish to npm
         run: npm run release
         env:
