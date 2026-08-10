@@ -18,6 +18,8 @@ Check out [installation guide](https://xmemory.ai/n8n) and register your interes
 
 Every operation returns the xmemory API payload directly: the response envelope (`{ids, items, errors, console_url}`) is unwrapped, so downstream nodes receive the operation result (read result, `write_id`, created instance, …). Errors are raised as node errors.
 
+When a `Read` query bundles several independent questions, the server may decompose it into sub-queries and answer each one. The read result keeps the combined `reader_result` and adds `reader_results` — one entry per sub-query (`{ sub_query, reader_result, error }`), so downstream nodes can consume each answer separately. A single-intent query yields one entry.
+
 ### How account errors surface
 
 When the xmemory accounts API rejects a call, the node turns the structured error envelope (`errors[0].code` / `details`) into a readable node-error message rather than a bare HTTP status:
