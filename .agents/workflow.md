@@ -64,6 +64,9 @@ When asked to build or update a node in this project, follow these steps:
 - After making changes verify that there are no lint/typecheck issues. Also
   allow the user to manually test the node in n8n to verify that it does what
   is expected
+- Before each release, and after any upgrade of `@n8n/node-cli` or the n8n version it pulls in,
+  follow `CLIENT-HEADER-VERIFY.md` to confirm the credential's `X-Xmemory-Client` header still
+  reaches the wire
 - Make sure to use **proper types whenever possible**
 - If you are updating the npm package version, make sure to **update
   CHANGELOG.md** in the root of the repository
