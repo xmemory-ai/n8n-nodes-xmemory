@@ -20,6 +20,12 @@
 // that silently verifies nothing reports the same success as one that verified
 // everything.
 //
+// It also owns this package's publish policy -- the `files` array and the version shape a release
+// needs. Those two read the source `package.json` rather than the built credential, because they are
+// about what `npm publish` will ship rather than about what a request carries; they live here because
+// they fail a release, on the same run, in the same place. A failure here may therefore name a
+// directory rather than a header.
+//
 // Run: `npm run build` (wired as its postbuild step).
 
 import { readFileSync } from 'node:fs';
@@ -72,6 +78,49 @@ function headerProblem(headers) {
 	return null;
 }
 
+// The built subdirectories that must be published, and why naming `dist` instead is not a shortcut.
+//
+// `dist/package.json` is the one whose absence is silent and unrecoverable: the built credential does
+// `require('../package.json')`, which resolves to it, so dropping it publishes a node that fails to load
+// on install -- with a green build, and an npm version that cannot be taken back.
+const REQUIRED_FILES = ['dist/credentials', 'dist/nodes', 'dist/package.json'];
+
+// What is wrong with a `files` array, as a list; empty when nothing is.
+//
+// Both directions are checked. Naming `dist` wholesale ships whatever the build swept into it --
+// `n8n-node build` copies non-code assets from the package root with an ignore list that does not match
+// nested `node_modules`, and `prepack` rebuilds on `npm pack`, so a scratch directory reaches the
+// published tarball rather than only the local one. Dropping an entry is the quieter failure and gets
+// the same treatment.
+function filesProblems(files) {
+	const normalized = files.map((entry) => String(entry).replace(/\/+$/, ''));
+	const problems = [];
+	if (normalized.includes('dist')) {
+		problems.push(
+			'package.json files names "dist" wholesale, which publishes whatever the build swept into it; ' +
+				'name the built subdirectories instead (see AGENTS.md)',
+		);
+	}
+	for (const required of REQUIRED_FILES) {
+		if (!normalized.includes(required)) {
+			problems.push(
+				`package.json files is missing "${required}"; the built credential resolves ` +
+					`../package.json to dist/package.json and the node fails to load on install without it`,
+			);
+		}
+	}
+	return problems;
+}
+
+// What is wrong with the package version, or `null` when nothing is.
+function versionProblem(version) {
+	if (VERSION_SHAPE.test(version)) return null;
+	return (
+		`package.json version "${version}" cannot be read by the API's version parser; ` +
+		`it needs three components of at most three digits each, without leading zeros`
+	);
+}
+
 // Every outcome of the matcher, checked before it is trusted on the real credential. Without this the
 // duplicate-rejection branch can be deleted with `lint`, `build` and `check:codex` all still green,
 // because this package declares no test script and the real credential only ever exercises one path.
@@ -101,30 +150,62 @@ for (const [label, headers, expected] of SELF_TEST) {
 	}
 }
 
+// The same treatment for the two packaging rules. Without these, deleting either branch -- or loosening
+// VERSION_SHAPE -- leaves `build`, `lint` and `check:codex` all green, because the only input they ever
+// see on the real path is this repo's own package.json, which satisfies both.
+const VERSION_SELF_TEST = [
+	['the current shape', '0.9.0', null],
+	['a prerelease suffix', '0.9.0-rc.1', null],
+	['a two-component version', '0.9', /cannot be read/],
+	['a fourth component', '0.9.0.1', /cannot be read/],
+	['a leading zero', '01.0.0', /cannot be read/],
+	['four digits in a component', '1000.0.0', /cannot be read/],
+	['not a version at all', 'latest', /cannot be read/],
+];
+
+for (const [label, version, expected] of VERSION_SELF_TEST) {
+	const got = versionProblem(version);
+	const ok = expected === null ? got === null : got !== null && expected.test(got);
+	if (!ok) {
+		console.error(
+			`✖  self-test: version ${label} — expected ${expected ?? 'no problem'}, got ${got ?? 'no problem'}`,
+		);
+		process.exit(1);
+	}
+}
+
+const FILES_SELF_TEST = [
+	['the enumerated subdirectories', ['dist/credentials', 'dist/nodes', 'dist/package.json'], 0],
+	['trailing slashes on each', ['dist/credentials/', 'dist/nodes/', 'dist/package.json'], 0],
+	['dist wholesale', ['dist'], 4],
+	['dist wholesale with a trailing slash', ['dist/'], 4],
+	['dist/package.json dropped', ['dist/credentials', 'dist/nodes'], 1],
+	['dist/credentials dropped', ['dist/nodes', 'dist/package.json'], 1],
+	['an empty list', [], 3],
+];
+
+for (const [label, files, expectedCount] of FILES_SELF_TEST) {
+	const got = filesProblems(files);
+	if (got.length !== expectedCount) {
+		console.error(
+			`✖  self-test: files ${label} — expected ${expectedCount} problem(s), got ${got.length}`,
+		);
+		process.exit(1);
+	}
+}
+
 // An n8n credential class always carries these; anything else the module
 // exports (a helper, a constant) is not something to check.
 const isCredential = (o) => typeof o?.name === 'string' && Array.isArray(o?.properties);
 
 const errors = [];
 
-if (!VERSION_SHAPE.test(pkg.version)) {
-	errors.push(
-		`package.json version "${pkg.version}" cannot be read by the API's version parser; ` +
-			`it needs three components of at most three digits each, without leading zeros`,
-	);
+const badVersion = versionProblem(pkg.version);
+if (badVersion) {
+	errors.push(badVersion);
 }
 
-// `n8n-node build` copies non-code assets from the package root with an ignore
-// list that does not match nested `node_modules`, so a checkout with a scratch
-// directory gets those swept into `dist/`. Naming `dist` wholesale here then
-// ships them, and `prepack` rebuilds on `npm pack`, so it happens at publish
-// time rather than only locally.
-if ((pkg.files ?? []).some((entry) => entry.replace(/\/+$/, '') === 'dist')) {
-	errors.push(
-		'package.json files names "dist" wholesale, which publishes whatever the build swept into it; ' +
-			'name the built subdirectories instead (see AGENTS.md)',
-	);
-}
+errors.push(...filesProblems(pkg.files ?? []));
 
 const credentialPaths = pkg.n8n?.credentials ?? [];
 if (credentialPaths.length === 0) {
