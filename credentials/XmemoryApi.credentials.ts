@@ -5,6 +5,8 @@ import type {
 	INodeProperties,
 } from 'n8n-workflow';
 
+import pkg from '../package.json';
+
 export class XmemoryApi implements ICredentialType {
 	name = 'xmemoryApi';
 
@@ -42,6 +44,7 @@ export class XmemoryApi implements ICredentialType {
 		properties: {
 			headers: {
 				Authorization: '=Bearer {{$credentials.token}}',
+				'X-Xmemory-Client': `n8n-nodes-xmemory/${pkg.version} (n8n)`,
 			},
 		},
 	};

@@ -33,6 +33,8 @@ If you enable workflow-level **Retry On Fail**, note that quota and trial errors
 - `Base URL`: xmemory API base URL, for example `https://api.xmemory.ai`.
 - `API Key`: API key used to authenticate against the xmemory API (sent as `Authorization: Bearer <key>`). Register your interest at [xmemory.ai](https://xmemory.ai); we will reach out to discuss your scenario and issue an API key.
 
+Every request this node makes also carries `X-Xmemory-Client: n8n-nodes-xmemory/<version> (n8n)`, so xmemory can tell this node's traffic apart from generic HTTP clients. It is a dedicated header rather than `User-Agent`, which n8n and its HTTP stack set for themselves.
+
 ## Resources
 
 - [tutorial for xmemory usage from n8n](https://xmemory.ai/n8n/)
@@ -47,7 +49,8 @@ This package targets the current community-node API version (`n8nNodesApiVersion
 
 Releases are manual and version-driven:
 
-1. Bump the `version` in `package.json` via a pull request and merge it to `main`.
-2. Run the **Publish** workflow (`Actions` → `Publish` → `Run workflow`, or `gh workflow run publish.yml`).
+1. Bump the `version` in `package.json` via a pull request and merge it to `main`. Keep it to three numeric components of at most three digits, without leading zeros (a prerelease or build suffix is fine) — the build fails otherwise, because the API records no version for anything else.
+2. Follow `CLIENT-HEADER-VERIFY.md` to confirm the `X-Xmemory-Client` header this node sends actually reaches the API on all three request paths. Nothing in this repo can check that — the code that applies the credential's headers lives in the n8n runtime, which this package does not depend on. Do this before publishing; an npm version cannot be replaced once it is out.
+3. Run the **Publish** workflow (`Actions` → `Publish` → `Run workflow`, or `gh workflow run publish.yml`).
 
 The workflow publishes the current `package.json` version to npm and then pushes a matching git tag (`X.Y.Z`). If a tag for that version already exists, the run fails — bump the version first.

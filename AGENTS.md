@@ -79,6 +79,17 @@ project _may_ contain example nodes and/or credentials that need to be
 - Make sure to use **proper types whenever possible**
 - If you are updating the npm package version, make sure to **update
   CHANGELOG.md** in the root of the repository
+- Before each release, and after any upgrade of `@n8n/node-cli` or the n8n version it pulls in,
+  follow `CLIENT-HEADER-VERIFY.md` to confirm the credential's `X-Xmemory-Client` header still
+  reaches the wire — the build-time check reads the credential object, not a request
+- `package.json`'s `files` names the built subdirectories one by one rather than `dist` — do not
+  collapse it back. `n8n-node build` copies non-code assets from the package root with an ignore
+  list that does not match nested `node_modules`, so a checkout with any scratch directory gets
+  those swept into `dist/`; with `files: ["dist"]` they ship. Measured on this repo: 51 files in
+  `dist` where the package is 10, the rest being `playwright-core` and template assets from a
+  `tmp/` dir. `prepack` rebuilds on `npm pack`, so it happens at publish time, not just locally.
+  `dist/package.json` must stay in the list: the built credential does `require('../package.json')`,
+  which resolves to it, and without it the node fails to load on install.
 - Read `.agents/workflow.md` for more info
 
 ## Context-specific docs
@@ -92,6 +103,7 @@ Load these before working on the relevant area:
 | Files in `credentials/`              | `.agents/credentials.md`                                            |
 | Adding a new version to a node       | `.agents/versioning.md`                                             |
 | Starting a new task or planning      | `.agents/workflow.md`                                               |
+| Releasing, or upgrading n8n deps     | `CLIENT-HEADER-VERIFY.md`                                           |
 
 ## Additional resources
 If you need any extra information, here are links to n8n's official docs
