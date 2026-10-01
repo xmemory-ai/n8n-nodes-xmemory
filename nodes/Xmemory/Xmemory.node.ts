@@ -718,8 +718,11 @@ export class Xmemory implements INodeType {
 					continue;
 				}
 
+				// The constructor returns a NodeOperationError argument unchanged, so this
+				// rethrows the original error as-is.
 				if (error instanceof NodeOperationError) {
-					throw error;
+					// codex-check: allow-node-operation-error
+					throw new NodeOperationError(this.getNode(), error);
 				}
 
 				// When the upstream HTTP error carries a structured xmemory envelope (e.g. a 402
