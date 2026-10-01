@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # required to push the version tag
-      id-token: write   # required for npm provenance
+      id-token: write   # required for npm Trusted Publishing and provenance
 
     steps:
       - uses: actions/checkout@v4
@@ -16,11 +16,17 @@ jobs:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # No `registry-url`: it writes an .npmrc that authenticates with
+      # NODE_AUTH_TOKEN, and publishing here goes through Trusted Publishing.
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install an npm that supports Trusted Publishing
+        # Trusted Publishing needs npm 11.5.1 or newer. Pinned so two runs
+        # publish with the same tooling, whatever npm the Node image ships.
+        run: npm install --global --ignore-scripts npm@11.20.0
 
       - name: Read version
         id: version
@@ -42,9 +48,11 @@ jobs:
         run: npm run check:codex
 
       - name: Release and publish to npm
+        # Trusted Publishing, so no token is stored: npm's trusted publisher for
+        # n8n-nodes-xmemory names this repository and publish.yml, so renaming
+        # either breaks publishing. Under GitHub Actions `n8n-node release` runs
+        # lint, build and `npm publish` with provenance.
         run: npm run release
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Tag the published version
         run: |
