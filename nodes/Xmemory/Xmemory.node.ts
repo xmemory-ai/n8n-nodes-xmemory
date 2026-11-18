@@ -197,12 +197,10 @@ function buildWriteBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject 
 	const text = ctx.getNodeParameter('text', itemIndex) as string;
 	const extractionLogic = ctx.getNodeParameter('extractionLogic', itemIndex) as string;
 	const traceId = ctx.getNodeParameter('traceId', itemIndex) as string;
-	const diffEngine = ctx.getNodeParameter('diffEngine', itemIndex) as boolean;
 
 	const body: IDataObject = {
 		text,
 		extraction_logic: extractionLogic,
-		use_diff_engine: diffEngine,
 	};
 
 	if (traceId.trim() !== '') {
@@ -455,18 +453,6 @@ const writeFields: INodeProperties[] = [
 		type: 'string',
 		default: '',
 		description: 'Optional trace ID for request tracing',
-		displayOptions: {
-			show: {
-				operation: ['write'],
-			},
-		},
-	},
-	{
-		displayName: 'Diff Engine',
-		name: 'diffEngine',
-		type: 'boolean',
-		default: true,
-		description: 'Whether to use diff engine for write requests',
 		displayOptions: {
 			show: {
 				operation: ['write'],
