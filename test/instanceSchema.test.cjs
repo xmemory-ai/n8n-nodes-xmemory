@@ -66,6 +66,12 @@ test('a JSON Schema using objects as an annotation of its own keeps json_schema 
 		{ objects: { Ticket: { code: 'an object without fields' } } },
 		{ objects: {} },
 		{ title: 'Tickets', description: 'Neither objects nor a keyword.' },
+		{
+			patternProperties: { '^customer_': { type: 'object', properties: { email: { type: 'string' } } } },
+			objects: XMD_OBJECTS,
+			relations: {},
+		},
+		{ objects: { ...XMD_OBJECTS, source: 'CRM' } },
 	]) {
 		const text = JSON.stringify(document);
 		assert.deepEqual(
@@ -125,4 +131,13 @@ test('a request carries XMD written as JSON as its own text, so each number reac
 	assert.ok(written.includes('"weight": {"type": "float", "default": 1.0}'), written);
 	assert.ok(written.includes('"default": 9007199254740993}'), written);
 	assert.deepEqual(Object.keys(JSON.parse(written)), ['name', 'instance_schema']);
+});
+
+test("the schema's text keeps its own place in the request, so no other field can take it", () => {
+	// A name that reads like the placeholder an earlier draft used stays the name.
+	const lookalike = '\u0000xmd-json-0\u0000';
+	const text = '{"objects": {"Gauge": {"fields": {"weight": {"type": "float", "default": 1.0}}}}}';
+	const written = requestBody({ name: lookalike, instance_schema: body('json', text).schema });
+	assert.equal(JSON.parse(written).name, lookalike);
+	assert.ok(written.includes('"instance_schema":{"yml":{"value":{"objects": {"Gauge"'), written);
 });

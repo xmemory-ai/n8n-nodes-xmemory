@@ -5,24 +5,9 @@ export type SchemaFormat = 'json' | 'yml';
 export const JSON_SCHEMA_DEPRECATION =
 	'JSON Schema input is deprecated: send an XMD schema (Schema Format: YAML) instead.';
 
-// Keywords at the root of a JSON Schema, any of which marks a document as one, whatever else it holds: a
-// JSON Schema may use `objects` as an annotation of its own.
-const JSON_SCHEMA_ROOT_KEYWORDS = [
-	'$schema',
-	'$id',
-	'type',
-	'properties',
-	'$defs',
-	'definitions',
-	'allOf',
-	'anyOf',
-	'oneOf',
-	'not',
-	'$ref',
-	'if',
-	'then',
-	'else',
-];
+// The root keys an XMD schema has, and the API's XMD model takes no other: a document with any other root key, a JSON
+// Schema's keywords among them, is no XMD schema.
+const XMD_ROOT_KEYS = new Set(['xmd_version', 'title', 'description', 'objects', 'relations']);
 
 function isPlainObject(value: unknown): value is IDataObject {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -42,9 +27,9 @@ function isXmdObjects(objects: unknown): boolean {
 	return types.every(isPlainObject) && types.some((type) => hasOwn(type as object, 'fields'));
 }
 
-// XMD written as JSON: the text parses as a JSON object with an own `xmd_version` key, or `objects`
-// shaped as XMD's object types, and none of JSON Schema's root keywords. It is returned parsed, so it
-// can be sent as the object it is.
+// XMD written as JSON: the text parses as a JSON object whose every key is one an XMD schema has, with an own
+// `xmd_version` key or `objects` shaped as XMD's object types. It is returned parsed, so it can be sent as the object
+// it is.
 export function xmdWrittenAsJson(text: string): IDataObject | undefined {
 	let parsed: unknown;
 	try {
@@ -56,7 +41,7 @@ export function xmdWrittenAsJson(text: string): IDataObject | undefined {
 		return undefined;
 	}
 	const document = parsed;
-	if (JSON_SCHEMA_ROOT_KEYWORDS.some((key) => hasOwn(document, key))) {
+	if (!Object.keys(document).every((key) => XMD_ROOT_KEYS.has(key))) {
 		return undefined;
 	}
 	const objects = hasOwn(document, 'objects') ? document.objects : undefined;
@@ -67,23 +52,23 @@ export function xmdWrittenAsJson(text: string): IDataObject | undefined {
 // (`requestBody`).
 const SOURCE_TEXT = new WeakMap<object, string>();
 
-// `body` as the JSON a request sends, each object parsed from XMD written as JSON written as the text it was read
-// from, so that every number reaches the API by its own token: `1.0` stays a float and an integer past 2^53 stays
-// exact, which JavaScript's own numbers would not keep.
+// `body` as the JSON a request sends. When its `instance_schema` carries XMD written as JSON, that schema's own text is
+// written at `instance_schema`'s place, after the body's other fields, so that every number reaches the API by its own
+// token (`1.0` stays a float and an integer past 2^53 stays exact, which JavaScript's own numbers would not keep), and
+// no other field can take its place. Any other body is `JSON.stringify`'s.
 export function requestBody(body: IDataObject): string {
-	const texts: string[] = [];
-	// A string no JSON text holds unescaped, written in each such object's place and then replaced by its text.
-	const placeholder = (index: number) => `\u0000xmd-json-${index}\u0000`;
-	const written = JSON.stringify(body, function (this: Record<string, unknown>, key: string, value: unknown) {
-		const original = this[key];
-		const source = typeof original === 'object' && original !== null ? SOURCE_TEXT.get(original) : undefined;
-		if (source === undefined) {
-			return value;
-		}
-		texts.push(source.trim());
-		return placeholder(texts.length - 1);
-	});
-	return texts.reduce((text, source, index) => text.replace(JSON.stringify(placeholder(index)), () => source), written);
+	const schema = hasOwn(body, 'instance_schema') ? body.instance_schema : undefined;
+	const yml = isPlainObject(schema) && hasOwn(schema, 'yml') ? schema.yml : undefined;
+	const value = isPlainObject(yml) && hasOwn(yml, 'value') ? yml.value : undefined;
+	const source = isPlainObject(value) ? SOURCE_TEXT.get(value) : undefined;
+	if (source === undefined) {
+		return JSON.stringify(body);
+	}
+	const rest: IDataObject = { ...body };
+	delete rest.instance_schema;
+	const written = `{"yml":{"value":${source.trim()}}}`;
+	const head = JSON.stringify(rest);
+	return head === '{}' ? `{"instance_schema":${written}}` : `${head.slice(0, -1)},"instance_schema":${written}}`;
 }
 
 // The `instance_schema` body for a new instance. YAML goes as `yml` text. Under the JSON format, XMD
