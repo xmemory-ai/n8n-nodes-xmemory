@@ -36,11 +36,28 @@ test('XMD written as JSON reaches the schema with every value as JSON gave it', 
 	assert.equal(fields.note.default, 'a\u0085b\u007fc');
 });
 
+// A JSON Schema's composition keywords, each beside object types shaped as XMD's: the keyword decides.
+const COMPOSITION = {
+	allOf: [{ type: 'object' }],
+	anyOf: [{ type: 'object' }],
+	oneOf: [{ type: 'object' }],
+	not: { type: 'array' },
+	$ref: '#/$defs/ticket',
+	if: { required: ['code'] },
+	then: { required: ['code'] },
+	else: { required: ['code'] },
+};
+const XMD_OBJECTS = JSON.parse(XMD_AS_JSON).objects;
+
 test('a JSON Schema using objects as an annotation of its own keeps json_schema and warns once', () => {
 	for (const document of [
 		{ type: 'object', properties: { code: { type: 'string' } }, objects: { source: 'CRM' } },
 		{ $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', objects: {} },
 		{ $defs: { code: { type: 'string' } }, objects: { source: 'CRM' } },
+		...Object.entries(COMPOSITION).map(([keyword, value]) => ({ [keyword]: value, objects: XMD_OBJECTS })),
+		{ objects: { source: 'CRM' } },
+		{ objects: { Ticket: { code: 'an object without fields' } } },
+		{ objects: {} },
 	]) {
 		const text = JSON.stringify(document);
 		assert.deepEqual(
@@ -48,6 +65,16 @@ test('a JSON Schema using objects as an annotation of its own keeps json_schema 
 			{ schema: { json_schema: { value: text } }, warnings: [JSON_SCHEMA_DEPRECATION] },
 			text,
 		);
+	}
+});
+
+test('XMD signed by its xmd_version, or by one object type with fields, is sent as yml with no warning', () => {
+	// An object still missing its `fields` gets XMD's own error for that object, not the JSON Schema converter's.
+	for (const document of [
+		{ xmd_version: 'v1', objects: {} },
+		{ objects: { ...XMD_OBJECTS, Queue: { description: 'Fields to come.' } } },
+	]) {
+		assert.deepEqual(body('json', JSON.stringify(document)), { schema: { yml: { value: document } }, warnings: [] });
 	}
 });
 

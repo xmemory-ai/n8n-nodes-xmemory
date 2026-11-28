@@ -7,10 +7,44 @@ export const JSON_SCHEMA_DEPRECATION =
 
 // Keywords at the root of a JSON Schema, any of which marks a document as one, whatever else it holds: a
 // JSON Schema may use `objects` as an annotation of its own.
-const JSON_SCHEMA_ROOT_KEYWORDS = ['$schema', '$id', 'type', 'properties', '$defs', 'definitions'];
+const JSON_SCHEMA_ROOT_KEYWORDS = [
+	'$schema',
+	'$id',
+	'type',
+	'properties',
+	'$defs',
+	'definitions',
+	'allOf',
+	'anyOf',
+	'oneOf',
+	'not',
+	'$ref',
+	'if',
+	'then',
+	'else',
+];
 
-// XMD written as JSON: the text parses as a JSON object with an own `objects` key and none of JSON
-// Schema's root keywords. It is returned parsed, so it can be sent as the object it is.
+function isPlainObject(value: unknown): value is IDataObject {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasOwn(value: object, key: string): boolean {
+	return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+// `objects` shaped as XMD's object types: a mapping of mappings, at least one with `fields`. One is
+// enough, so a schema with an object missing its `fields` reaches XMD's own error for that object.
+function isXmdObjects(objects: unknown): boolean {
+	if (!isPlainObject(objects)) {
+		return false;
+	}
+	const types = Object.values(objects);
+	return types.every(isPlainObject) && types.some((type) => hasOwn(type as object, 'fields'));
+}
+
+// XMD written as JSON: the text parses as a JSON object with an own `xmd_version` key, or `objects`
+// shaped as XMD's object types, and none of JSON Schema's root keywords. It is returned parsed, so it
+// can be sent as the object it is.
 export function xmdWrittenAsJson(text: string): IDataObject | undefined {
 	let parsed: unknown;
 	try {
@@ -18,14 +52,15 @@ export function xmdWrittenAsJson(text: string): IDataObject | undefined {
 	} catch {
 		return undefined;
 	}
-	if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+	if (!isPlainObject(parsed)) {
 		return undefined;
 	}
-	const own = (key: string) => Object.prototype.hasOwnProperty.call(parsed, key);
-	if (!own('objects') || JSON_SCHEMA_ROOT_KEYWORDS.some(own)) {
+	const document = parsed;
+	if (JSON_SCHEMA_ROOT_KEYWORDS.some((key) => hasOwn(document, key))) {
 		return undefined;
 	}
-	return parsed as IDataObject;
+	const objects = hasOwn(document, 'objects') ? document.objects : undefined;
+	return hasOwn(document, 'xmd_version') || isXmdObjects(objects) ? document : undefined;
 }
 
 // The `instance_schema` body for a new instance. YAML goes as `yml` text. Under the JSON format, XMD
