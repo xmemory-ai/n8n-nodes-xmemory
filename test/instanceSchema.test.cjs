@@ -72,6 +72,7 @@ test('a JSON Schema using objects as an annotation of its own keeps json_schema 
 			relations: {},
 		},
 		{ objects: { ...XMD_OBJECTS, source: 'CRM' } },
+		{ objects: {}, relations: [] },
 	]) {
 		const text = JSON.stringify(document);
 		assert.deepEqual(
@@ -82,11 +83,12 @@ test('a JSON Schema using objects as an annotation of its own keeps json_schema 
 	}
 });
 
-test('XMD signed by its xmd_version, or by one object type with fields, is sent as yml with no warning', () => {
+test('XMD signed by its xmd_version, an object type with fields or both its maps goes as yml, unwarned', () => {
 	// An object still missing its `fields` gets XMD's own error for that object, not the JSON Schema converter's.
 	for (const document of [
 		{ xmd_version: 'v1', objects: {} },
 		{ objects: { ...XMD_OBJECTS, Queue: { description: 'Fields to come.' } } },
+		{ title: 'Bootstrap', objects: {}, relations: {} },
 	]) {
 		assert.deepEqual(body('json', JSON.stringify(document)), { schema: { yml: { value: document } }, warnings: [] });
 	}
@@ -140,4 +142,13 @@ test("the schema's text keeps its own place in the request, so no other field ca
 	const written = requestBody({ name: lookalike, instance_schema: body('json', text).schema });
 	assert.equal(JSON.parse(written).name, lookalike);
 	assert.ok(written.includes('"instance_schema":{"yml":{"value":{"objects": {"Gauge"'), written);
+});
+
+test('a lone surrogate in the schema goes as its JSON escape, never as the character', () => {
+	// Written as the character, the request's UTF-8 would turn it into U+FFFD.
+	const text =
+		'{"objects": {"Ticket": {"fields": {"code": {"type": "str", "default": "a\ud800b"}}}}, "relations": {}}';
+	const written = requestBody({ name: 'Tickets', instance_schema: body('json', text).schema });
+	assert.ok(written.includes('"default": "a\\ud800b"'), written);
+	assert.ok(!written.includes('\ud800'), written);
 });

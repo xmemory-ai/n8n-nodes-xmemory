@@ -28,8 +28,8 @@ function isXmdObjects(objects: unknown): boolean {
 }
 
 // XMD written as JSON: the text parses as a JSON object whose every key is one an XMD schema has, with an own
-// `xmd_version` key or `objects` shaped as XMD's object types. It is returned parsed, so it can be sent as the object
-// it is.
+// `xmd_version` key, `objects` shaped as XMD's object types, or both `objects` and `relations` as maps, every value of
+// `objects` a map. It is returned parsed, so it can be sent as the object it is.
 export function xmdWrittenAsJson(text: string): IDataObject | undefined {
 	let parsed: unknown;
 	try {
@@ -45,7 +45,19 @@ export function xmdWrittenAsJson(text: string): IDataObject | undefined {
 		return undefined;
 	}
 	const objects = hasOwn(document, 'objects') ? document.objects : undefined;
-	return hasOwn(document, 'xmd_version') || isXmdObjects(objects) ? document : undefined;
+	const relations = hasOwn(document, 'relations') ? document.relations : undefined;
+	// An empty schema is XMD too, by both its maps: `objects` alone, empty, can be a JSON Schema's annotation.
+	const maps = isPlainObject(objects) && isPlainObject(relations) && Object.values(objects).every(isPlainObject);
+	return hasOwn(document, 'xmd_version') || isXmdObjects(objects) || maps ? document : undefined;
+}
+
+// `text` with each lone UTF-16 surrogate written as a JSON escape. Valid JSON holds one only inside a string, where the
+// escape means the same, and a request's UTF-8 encoding would turn the character itself into U+FFFD.
+function escapeLoneSurrogates(text: string): string {
+	return text.replace(
+		/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+		(unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, '0')}`,
+	);
 }
 
 // The text each object parsed from XMD written as JSON was read from, so that a request can carry the text itself
@@ -66,7 +78,7 @@ export function requestBody(body: IDataObject): string {
 	}
 	const rest: IDataObject = { ...body };
 	delete rest.instance_schema;
-	const written = `{"yml":{"value":${source.trim()}}}`;
+	const written = `{"yml":{"value":${escapeLoneSurrogates(source.trim())}}}`;
 	const head = JSON.stringify(rest);
 	return head === '{}' ? `{"instance_schema":${written}}` : `${head.slice(0, -1)},"instance_schema":${written}}`;
 }
