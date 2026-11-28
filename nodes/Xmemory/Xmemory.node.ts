@@ -14,7 +14,7 @@ import {
 	type JsonObject,
 } from 'n8n-workflow';
 
-import { instanceSchemaBody, type SchemaFormat } from './instanceSchema';
+import { instanceSchemaBody, requestBody, type SchemaFormat } from './instanceSchema';
 import { rejectionDetails, warningMessages } from './rejection';
 import { extractionLogicField } from './writeBody';
 
@@ -220,12 +220,11 @@ function buildReadBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
 
 function buildWriteBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
 	const text = ctx.getNodeParameter('text', itemIndex) as string;
-	const extractionLogic = ctx.getNodeParameter('extractionLogic', itemIndex) as string;
 	const traceId = ctx.getNodeParameter('traceId', itemIndex) as string;
 
 	const body: IDataObject = {
 		text,
-		...extractionLogicField(extractionLogic),
+		...extractionLogicField(),
 	};
 
 	if (traceId.trim() !== '') {
@@ -456,7 +455,7 @@ const writeFields: INodeProperties[] = [
 		type: 'options',
 		default: 'fast',
 		description:
-			'Writes use deep extraction. The option is kept so existing workflows keep working; Fast has no effect.',
+			'Writes use deep extraction, whichever choice is saved. The option is kept so existing workflows keep working; Fast has no effect.',
 		options: [
 			{
 				name: 'Deep',
@@ -647,6 +646,9 @@ export class Xmemory implements INodeType {
 				const baseUrl = credentials.baseUrl.replace(/\/$/, '');
 				let endpoint: string;
 				let body: IDataObject;
+				// Create Instance's body goes as JSON text of its own (`requestBody`), so XMD written as JSON keeps
+				// each number's token.
+				let asText = false;
 
 				if (operation === 'write') {
 					const instanceId = this.getNodeParameter('instanceId', itemIndex) as string;
@@ -673,14 +675,23 @@ export class Xmemory implements INodeType {
 					}
 					endpoint = `/clusters/${clusterId}/instances`;
 					body = buildCreateInstanceBody(this, itemIndex, (message) => hints.push(message));
+					asText = true;
 				}
 
-				const requestOptions: IHttpRequestOptions = {
-					method: 'POST',
-					url: `${baseUrl}${endpoint}`,
-					body,
-					json: true,
-				};
+				const requestOptions: IHttpRequestOptions = asText
+					? {
+							method: 'POST',
+							url: `${baseUrl}${endpoint}`,
+							body: requestBody(body),
+							headers: { 'Content-Type': 'application/json' },
+							json: true,
+						}
+					: {
+							method: 'POST',
+							url: `${baseUrl}${endpoint}`,
+							body,
+							json: true,
+						};
 
 				const response = (await this.helpers.httpRequestWithAuthentication.call(
 					this,

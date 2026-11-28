@@ -15,18 +15,20 @@ require.cache[isolatedVm] = standIn;
 
 const { NodeApiError } = require('n8n-workflow');
 const { Xmemory } = require('../dist/nodes/Xmemory/Xmemory.node.js');
+const { JSON_SCHEMA_DEPRECATION } = require('../dist/nodes/Xmemory/instanceSchema.js');
 
 const NODE = { id: 'n1', name: 'Xmemory', type: 'n8n-nodes-xmemory.xmemory', typeVersion: 1, position: [0, 0], parameters: {} };
 // Example details only: the node passes on whatever object the API sends.
 const REJECTION = { summary: 'Example details.', items: [{ field: 'stage', note: 'example' }] };
 const REFUSED = { code: 'VALIDATION_ERROR', message: 'Rejected.', details: { rejection: REJECTION } };
 
-// A run of the node over one item: `params` are its parameters, `answer` what the transport does with the request.
-async function run(params, answer, { continueOnFail = false } = {}) {
+// A run of the node over `items` items: `params` are its parameters, `answer` what the transport does with each
+// request, given the request and its item's index.
+async function run(params, answer, { continueOnFail = false, items = 1 } = {}) {
 	const requests = [];
 	const hints = [];
 	const ctx = {
-		getInputData: () => [{ json: {} }],
+		getInputData: () => Array.from({ length: items }, () => ({ json: {} })),
 		getNodeParameter: (name, _item, fallback) => (name in params ? params[name] : fallback),
 		getCredentials: async () => ({ baseUrl: 'https://api.example.test/' }),
 		getNode: () => NODE,
@@ -35,7 +37,7 @@ async function run(params, answer, { continueOnFail = false } = {}) {
 		helpers: {
 			httpRequestWithAuthentication: async function (_credentials, options) {
 				requests.push(options);
-				return answer(options);
+				return answer(options, requests.length - 1);
 			},
 		},
 	};
@@ -51,7 +53,11 @@ async function run(params, answer, { continueOnFail = false } = {}) {
 
 // The HTTP helper's own error for an HTTP 400 answer: a NodeApiError holding the answer's body.
 function refusedOverHttp(body) {
-	const error = new NodeApiError(NODE, { message: 'Request failed with status code 400', httpCode: '400' });
+	const error = new NodeApiError(
+		NODE,
+		{ message: 'Request failed with status code 400', httpCode: '400' },
+		{ httpCode: '400' },
+	);
 	error.context.data = body;
 	return error;
 }
@@ -59,13 +65,30 @@ function refusedOverHttp(body) {
 const WRITE = { operation: 'write', instanceId: 'i1', text: 'A teal gadget.', extractionLogic: 'fast', traceId: '' };
 
 test('a write refused over HTTP throws the legible message with the rejection, on the same error', async () => {
-	const { thrown } = await run(WRITE, () => {
-		throw refusedOverHttp({ errors: [REFUSED] });
-	});
-	assert.ok(thrown instanceof NodeApiError);
+	// The second item's write is refused: the error the node throws is the HTTP helper's own, of that item.
+	let refused;
+	const { thrown } = await run(
+		WRITE,
+		(_options, index) => {
+			if (index === 0) {
+				return { items: [{ write_id: 'w1' }] };
+			}
+			refused = refusedOverHttp({ errors: [REFUSED] });
+			throw refused;
+		},
+		{ items: 2 },
+	);
+	assert.equal(thrown, refused);
+	assert.equal(thrown.httpCode, '400');
 	assert.match(thrown.message, /Rejected\./);
-	assert.match(thrown.description, /Example details\./);
-	assert.equal(thrown.context.itemIndex, 0);
+	assert.equal(thrown.description, JSON.stringify(REJECTION, null, 2));
+	assert.equal(thrown.context.itemIndex, 1);
+});
+
+test('a write refused inside a 200 envelope stops with the legible message and the whole rejection', async () => {
+	const { thrown } = await run(WRITE, () => ({ errors: [REFUSED] }));
+	assert.match(thrown.message, /Rejected\./);
+	assert.equal(thrown.description, JSON.stringify(REJECTION, null, 2));
 });
 
 test('Continue On Fail keeps the rejection of a write refused inside a 200 envelope', async () => {
@@ -86,18 +109,24 @@ test('Continue On Fail keeps the rejection of a write refused over HTTP', async 
 	assert.deepEqual(output[0][0].json.rejection, REJECTION);
 });
 
-test('a Fast write sends no extraction setting', async () => {
-	const { requests } = await run(WRITE, () => ({ items: [{ write_id: 'w1' }] }));
-	assert.equal(requests.length, 1);
-	assert.equal('extraction_logic' in requests[0].body, false);
-});
+for (const choice of ['fast', 'deep']) {
+	test(`a write whose saved Extraction Logic is ${choice} sends deep extraction`, async () => {
+		const { requests } = await run({ ...WRITE, extractionLogic: choice }, () => ({ items: [{ write_id: 'w1' }] }));
+		assert.equal(requests.length, 1);
+		assert.equal(requests[0].body.extraction_logic, 'deep');
+	});
+}
 
-test("a stored write's warnings become hints", async () => {
-	const { hints } = await run(WRITE, () => ({
+test("a stored write's warnings become hints, each in its order, beside the write's output", async () => {
+	const { hints, output } = await run(WRITE, () => ({
 		items: [{ write_id: 'w1' }],
-		warnings: [{ code: 'EXAMPLE_WARNING', message: 'A note on the write.' }],
+		warnings: [
+			{ code: 'EXAMPLE_WARNING', message: 'A first note on the write.' },
+			{ code: 'EXAMPLE_WARNING', message: 'A second note on the write.' },
+		],
 	}));
-	assert.deepEqual(hints, ['A note on the write.']);
+	assert.deepEqual(hints, ['A first note on the write.', 'A second note on the write.']);
+	assert.deepEqual(output, [[{ json: { write_id: 'w1' }, pairedItem: { item: 0 } }]]);
 });
 
 const CREATE = { operation: 'create_instance', clusterId: 'c1', instanceName: 'Tickets', schemaFormat: 'json' };
@@ -107,8 +136,18 @@ test('Create Instance sends XMD written as JSON as the parsed object', async () 
 	const { requests, hints } = await run({ ...CREATE, schemaText: JSON.stringify(schema) }, () => ({
 		items: [{ id: 'inst-1' }],
 	}));
-	assert.deepEqual(requests[0].body.instance_schema, { yml: { value: schema } });
+	assert.deepEqual(JSON.parse(requests[0].body).instance_schema, { yml: { value: schema } });
+	assert.equal(requests[0].headers['Content-Type'], 'application/json');
 	assert.deepEqual(hints, []);
+});
+
+test('Create Instance sends each number of XMD written as JSON by its own token', async () => {
+	const text =
+		'{"objects": {"Gauge": {"fields": {"weight": {"type": "float", "default": 1.0}, ' +
+		'"serial": {"type": "int", "default": 9007199254740993}}, "primary_key": ["serial"]}}}';
+	const { requests } = await run({ ...CREATE, schemaText: text }, () => ({ items: [{ id: 'inst-1' }] }));
+	assert.ok(requests[0].body.includes('"weight": {"type": "float", "default": 1.0}'), requests[0].body);
+	assert.ok(requests[0].body.includes('"default": 9007199254740993}'), requests[0].body);
 });
 
 test("Create Instance's deprecation hint reaches the error when the API refuses the schema", async () => {
@@ -118,4 +157,16 @@ test("Create Instance's deprecation hint reaches the error when the API refuses 
 	});
 	assert.equal(hints.length, 1);
 	assert.ok(thrown.description.includes(hints[0]), thrown.description);
+});
+
+test("Create Instance's deprecation hint reaches the item Continue On Fail emits when the API refuses the schema", async () => {
+	const legacy = JSON.stringify({ type: 'object', properties: { code: { type: 'string' } } });
+	const { output } = await run(
+		{ ...CREATE, schemaText: legacy },
+		() => {
+			throw refusedOverHttp({ errors: [{ code: 'INVALID_INPUT', message: 'The schema is not valid.' }] });
+		},
+		{ continueOnFail: true },
+	);
+	assert.deepEqual(output[0][0].json.hints, [JSON_SCHEMA_DEPRECATION]);
 });

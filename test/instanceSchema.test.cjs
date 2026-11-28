@@ -2,7 +2,7 @@
 // node:test and node:assert only, so the package gains no dependency.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { instanceSchemaBody, JSON_SCHEMA_DEPRECATION } = require('../dist/nodes/Xmemory/instanceSchema.js');
+const { instanceSchemaBody, JSON_SCHEMA_DEPRECATION, requestBody } = require('../dist/nodes/Xmemory/instanceSchema.js');
 
 const XMD_AS_JSON = JSON.stringify({
 	objects: { Ticket: { fields: { code: { type: 'str', required: true } }, primary_key: ['code'] } },
@@ -37,7 +37,14 @@ test('XMD written as JSON reaches the schema with every value as JSON gave it', 
 });
 
 // A JSON Schema's composition keywords, each beside object types shaped as XMD's: the keyword decides.
-const COMPOSITION = {
+// Each of JSON Schema's root keywords, alone beside object types shaped as XMD's: that keyword alone decides.
+const ROOT_KEYWORDS = {
+	$schema: 'https://json-schema.org/draft/2020-12/schema',
+	$id: 'https://example.com/ticket.schema.json',
+	type: 'object',
+	properties: { code: { type: 'string' } },
+	$defs: { ticket: { type: 'object' } },
+	definitions: { ticket: { type: 'object' } },
 	allOf: [{ type: 'object' }],
 	anyOf: [{ type: 'object' }],
 	oneOf: [{ type: 'object' }],
@@ -54,10 +61,11 @@ test('a JSON Schema using objects as an annotation of its own keeps json_schema 
 		{ type: 'object', properties: { code: { type: 'string' } }, objects: { source: 'CRM' } },
 		{ $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', objects: {} },
 		{ $defs: { code: { type: 'string' } }, objects: { source: 'CRM' } },
-		...Object.entries(COMPOSITION).map(([keyword, value]) => ({ [keyword]: value, objects: XMD_OBJECTS })),
+		...Object.entries(ROOT_KEYWORDS).map(([keyword, value]) => ({ [keyword]: value, objects: XMD_OBJECTS })),
 		{ objects: { source: 'CRM' } },
 		{ objects: { Ticket: { code: 'an object without fields' } } },
 		{ objects: {} },
+		{ title: 'Tickets', description: 'Neither objects nor a keyword.' },
 	]) {
 		const text = JSON.stringify(document);
 		assert.deepEqual(
@@ -107,4 +115,14 @@ test('YAML is sent as yml unchanged, whatever it holds', () => {
 	for (const text of ['objects:\n  Ticket: {}\n', JSON_SCHEMA]) {
 		assert.deepEqual(body('yml', text), { schema: { yml: { value: text } }, warnings: [] }, text);
 	}
+});
+
+test('a request carries XMD written as JSON as its own text, so each number reaches the API by its own token', () => {
+	const text =
+		'{"objects": {"Gauge": {"fields": {"weight": {"type": "float", "default": 1.0}, ' +
+		'"serial": {"type": "int", "default": 9007199254740993}}, "primary_key": ["serial"]}}}';
+	const written = requestBody({ name: 'Gauges', instance_schema: body('json', text).schema });
+	assert.ok(written.includes('"weight": {"type": "float", "default": 1.0}'), written);
+	assert.ok(written.includes('"default": 9007199254740993}'), written);
+	assert.deepEqual(Object.keys(JSON.parse(written)), ['name', 'instance_schema']);
 });

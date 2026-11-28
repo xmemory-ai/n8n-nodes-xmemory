@@ -63,6 +63,29 @@ export function xmdWrittenAsJson(text: string): IDataObject | undefined {
 	return hasOwn(document, 'xmd_version') || isXmdObjects(objects) ? document : undefined;
 }
 
+// The text each object parsed from XMD written as JSON was read from, so that a request can carry the text itself
+// (`requestBody`).
+const SOURCE_TEXT = new WeakMap<object, string>();
+
+// `body` as the JSON a request sends, each object parsed from XMD written as JSON written as the text it was read
+// from, so that every number reaches the API by its own token: `1.0` stays a float and an integer past 2^53 stays
+// exact, which JavaScript's own numbers would not keep.
+export function requestBody(body: IDataObject): string {
+	const texts: string[] = [];
+	// A string no JSON text holds unescaped, written in each such object's place and then replaced by its text.
+	const placeholder = (index: number) => `\u0000xmd-json-${index}\u0000`;
+	const written = JSON.stringify(body, function (this: Record<string, unknown>, key: string, value: unknown) {
+		const original = this[key];
+		const source = typeof original === 'object' && original !== null ? SOURCE_TEXT.get(original) : undefined;
+		if (source === undefined) {
+			return value;
+		}
+		texts.push(source.trim());
+		return placeholder(texts.length - 1);
+	});
+	return texts.reduce((text, source, index) => text.replace(JSON.stringify(placeholder(index)), () => source), written);
+}
+
 // The `instance_schema` body for a new instance. YAML goes as `yml` text. Under the JSON format, XMD
 // written as JSON goes as `yml` too, as the parsed object, so every value reaches the schema as JSON gave
 // it; any other text (a JSON Schema, or text that does not parse) keeps the `json_schema` route as
@@ -77,6 +100,7 @@ export function instanceSchemaBody(
 	}
 	const xmd = xmdWrittenAsJson(text);
 	if (xmd !== undefined) {
+		SOURCE_TEXT.set(xmd, text);
 		return { yml: { value: xmd } };
 	}
 	warn(JSON_SCHEMA_DEPRECATION);

@@ -4,10 +4,6 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { extractionLogicField } = require('../dist/nodes/Xmemory/writeBody.js');
 
-test('Fast sends no extraction setting, so the write uses the API default', () => {
-	assert.deepEqual(extractionLogicField('fast'), {});
-});
-
-test('Deep is sent as given', () => {
-	assert.deepEqual(extractionLogicField('deep'), { extraction_logic: 'deep' });
+test('every write sends deep extraction, so an API that runs Fast for a write sending none still runs Deep', () => {
+	assert.deepEqual(extractionLogicField(), { extraction_logic: 'deep' });
 });
