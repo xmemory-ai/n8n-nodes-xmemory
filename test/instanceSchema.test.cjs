@@ -1,0 +1,154 @@
+// The Create Instance body's schema payload, read from the built node (`npm run build` first).
+// node:test and node:assert only, so the package gains no dependency.
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { instanceSchemaBody, JSON_SCHEMA_DEPRECATION, requestBody } = require('../dist/nodes/Xmemory/instanceSchema.js');
+
+const XMD_AS_JSON = JSON.stringify({
+	objects: { Ticket: { fields: { code: { type: 'str', required: true } }, primary_key: ['code'] } },
+});
+const JSON_SCHEMA = JSON.stringify({
+	$schema: 'https://json-schema.org/draft/2020-12/schema',
+	type: 'object',
+	properties: { code: { type: 'string' } },
+});
+
+function body(format, text) {
+	const warnings = [];
+	const schema = instanceSchemaBody(format, text, (message) => warnings.push(message));
+	return { schema, warnings };
+}
+
+test('XMD written as JSON is sent as yml, as the parsed object, with no warning', () => {
+	assert.deepEqual(body('json', XMD_AS_JSON), {
+		schema: { yml: { value: JSON.parse(XMD_AS_JSON) } },
+		warnings: [],
+	});
+});
+
+test('XMD written as JSON reaches the schema with every value as JSON gave it', () => {
+	// A float JSON writes with an exponent, and strings holding characters a YAML reader folds or refuses.
+	const text =
+		'{"objects": {"Gauge": {"fields": {"reading": {"type": "float", "default": 1e-7}, ' +
+		'"note": {"type": "str", "default": "a\u0085b\u007fc"}}, "primary_key": ["note"]}}}';
+	const fields = body('json', text).schema.yml.value.objects.Gauge.fields;
+	assert.equal(fields.reading.default, 1e-7);
+	assert.equal(fields.note.default, 'a\u0085b\u007fc');
+});
+
+// A JSON Schema's composition keywords, each beside object types shaped as XMD's: the keyword decides.
+// Each of JSON Schema's root keywords, alone beside object types shaped as XMD's: that keyword alone decides.
+const ROOT_KEYWORDS = {
+	$schema: 'https://json-schema.org/draft/2020-12/schema',
+	$id: 'https://example.com/ticket.schema.json',
+	type: 'object',
+	properties: { code: { type: 'string' } },
+	$defs: { ticket: { type: 'object' } },
+	definitions: { ticket: { type: 'object' } },
+	allOf: [{ type: 'object' }],
+	anyOf: [{ type: 'object' }],
+	oneOf: [{ type: 'object' }],
+	not: { type: 'array' },
+	$ref: '#/$defs/ticket',
+	if: { required: ['code'] },
+	then: { required: ['code'] },
+	else: { required: ['code'] },
+};
+const XMD_OBJECTS = JSON.parse(XMD_AS_JSON).objects;
+
+test('a JSON Schema using objects as an annotation of its own keeps json_schema and warns once', () => {
+	for (const document of [
+		{ type: 'object', properties: { code: { type: 'string' } }, objects: { source: 'CRM' } },
+		{ $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', objects: {} },
+		{ $defs: { code: { type: 'string' } }, objects: { source: 'CRM' } },
+		...Object.entries(ROOT_KEYWORDS).map(([keyword, value]) => ({ [keyword]: value, objects: XMD_OBJECTS })),
+		{ objects: { source: 'CRM' } },
+		{ objects: { Ticket: { code: 'an object without fields' } } },
+		{ objects: {} },
+		{ title: 'Tickets', description: 'Neither objects nor a keyword.' },
+		{
+			patternProperties: { '^customer_': { type: 'object', properties: { email: { type: 'string' } } } },
+			objects: XMD_OBJECTS,
+			relations: {},
+		},
+		{ objects: { ...XMD_OBJECTS, source: 'CRM' } },
+		{ objects: {}, relations: [] },
+	]) {
+		const text = JSON.stringify(document);
+		assert.deepEqual(
+			body('json', text),
+			{ schema: { json_schema: { value: text } }, warnings: [JSON_SCHEMA_DEPRECATION] },
+			text,
+		);
+	}
+});
+
+test('XMD signed by its xmd_version, an object type with fields or both its maps goes as yml, unwarned', () => {
+	// An object still missing its `fields` gets XMD's own error for that object, not the JSON Schema converter's.
+	for (const document of [
+		{ xmd_version: 'v1', objects: {} },
+		{ objects: { ...XMD_OBJECTS, Queue: { description: 'Fields to come.' } } },
+		{ title: 'Bootstrap', objects: {}, relations: {} },
+	]) {
+		assert.deepEqual(body('json', JSON.stringify(document)), { schema: { yml: { value: document } }, warnings: [] });
+	}
+});
+
+test('a JSON Schema keeps json_schema and warns once', () => {
+	assert.deepEqual(body('json', JSON_SCHEMA), {
+		schema: { json_schema: { value: JSON_SCHEMA } },
+		warnings: [JSON_SCHEMA_DEPRECATION],
+	});
+	assert.equal(
+		JSON_SCHEMA_DEPRECATION,
+		'JSON Schema input is deprecated: send an XMD schema (Schema Format: YAML) instead.',
+	);
+});
+
+test('text that does not parse as JSON keeps json_schema and warns once', () => {
+	const text = 'objects:\n  Ticket: {}\n';
+	assert.deepEqual(body('json', text), {
+		schema: { json_schema: { value: text } },
+		warnings: [JSON_SCHEMA_DEPRECATION],
+	});
+});
+
+test('JSON whose top level is not an object with its own objects key is not XMD', () => {
+	for (const text of ['[{"objects": {}}]', 'null', '"objects"', '{"definitions": {"objects": {}}}']) {
+		assert.deepEqual(body('json', text).schema, { json_schema: { value: text } }, text);
+	}
+});
+
+test('YAML is sent as yml unchanged, whatever it holds', () => {
+	for (const text of ['objects:\n  Ticket: {}\n', JSON_SCHEMA]) {
+		assert.deepEqual(body('yml', text), { schema: { yml: { value: text } }, warnings: [] }, text);
+	}
+});
+
+test('a request carries XMD written as JSON as its own text, so each number reaches the API by its own token', () => {
+	const text =
+		'{"objects": {"Gauge": {"fields": {"weight": {"type": "float", "default": 1.0}, ' +
+		'"serial": {"type": "int", "default": 9007199254740993}}, "primary_key": ["serial"]}}}';
+	const written = requestBody({ name: 'Gauges', instance_schema: body('json', text).schema });
+	assert.ok(written.includes('"weight": {"type": "float", "default": 1.0}'), written);
+	assert.ok(written.includes('"default": 9007199254740993}'), written);
+	assert.deepEqual(Object.keys(JSON.parse(written)), ['name', 'instance_schema']);
+});
+
+test("the schema's text keeps its own place in the request, so no other field can take it", () => {
+	// A name that reads like the placeholder an earlier draft used stays the name.
+	const lookalike = '\u0000xmd-json-0\u0000';
+	const text = '{"objects": {"Gauge": {"fields": {"weight": {"type": "float", "default": 1.0}}}}}';
+	const written = requestBody({ name: lookalike, instance_schema: body('json', text).schema });
+	assert.equal(JSON.parse(written).name, lookalike);
+	assert.ok(written.includes('"instance_schema":{"yml":{"value":{"objects": {"Gauge"'), written);
+});
+
+test('a lone surrogate in the schema goes as its JSON escape, never as the character', () => {
+	// Written as the character, the request's UTF-8 would turn it into U+FFFD.
+	const text =
+		'{"objects": {"Ticket": {"fields": {"code": {"type": "str", "default": "a\ud800b"}}}}, "relations": {}}';
+	const written = requestBody({ name: 'Tickets', instance_schema: body('json', text).schema });
+	assert.ok(written.includes('"default": "a\\ud800b"'), written);
+	assert.ok(!written.includes('\ud800'), written);
+});

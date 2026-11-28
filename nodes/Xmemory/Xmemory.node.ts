@@ -14,6 +14,10 @@ import {
 	type JsonObject,
 } from 'n8n-workflow';
 
+import { instanceSchemaBody, requestBody, type SchemaFormat } from './instanceSchema';
+import { rejectionDetails, warningMessages } from './rejection';
+import { extractionLogicField } from './writeBody';
+
 type XmemoryCredentials = {
 	baseUrl: string;
 	token: string;
@@ -37,6 +41,7 @@ type XmemoryApiResponse = IDataObject & {
 	ids?: string[];
 	items?: IDataObject[];
 	errors?: XmemoryApiError[];
+	warnings?: XmemoryApiError[];
 	console_url?: string | null;
 };
 
@@ -123,9 +128,13 @@ function extractXmemoryErrors(error: unknown): XmemoryApiError[] | undefined {
 	return undefined;
 }
 
-function buildCreateInstanceBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
+function buildCreateInstanceBody(
+	ctx: IExecuteFunctions,
+	itemIndex: number,
+	hinted: (message: string) => void,
+): IDataObject {
 	const name = ctx.getNodeParameter('instanceName', itemIndex) as string;
-	const schemaFormat = ctx.getNodeParameter('schemaFormat', itemIndex) as 'json' | 'yml';
+	const schemaFormat = ctx.getNodeParameter('schemaFormat', itemIndex) as SchemaFormat;
 	const schemaText = ctx.getNodeParameter('schemaText', itemIndex) as string;
 
 	// Xmemory requires a valid XMD schema to create an instance; an empty schema is
@@ -141,10 +150,26 @@ function buildCreateInstanceBody(ctx: IExecuteFunctions, itemIndex: number): IDa
 
 	return {
 		name,
-		instance_schema:
-			schemaFormat === 'json'
-				? { json_schema: { value: schemaText } }
-				: { yml: { value: schemaText } },
+		instance_schema: instanceSchemaBody(schemaFormat, schemaText, (message) => {
+			ctx.addExecutionHints({ message, type: 'warning', location: 'outputPane' });
+			hinted(message);
+		}),
+	};
+}
+
+// A failed item's description: the rejection's details when the API sent them, and the request's hints.
+function errorDescription(rejection: IDataObject | undefined, hints: string[]): string | undefined {
+	const parts = [...(rejection !== undefined ? [JSON.stringify(rejection, null, 2)] : []), ...hints];
+	return parts.length > 0 ? parts.join('\n\n') : undefined;
+}
+
+// The item Continue On Fail emits for a failed request: its message, its rejection, and its hints.
+function errorItem(message: string, rejection: IDataObject | undefined, hints: string[]): IDataObject {
+	return {
+		status: 'error',
+		error: message,
+		...(rejection !== undefined ? { rejection } : {}),
+		...(hints.length > 0 ? { hints: [...hints] } : {}),
 	};
 }
 
@@ -195,12 +220,11 @@ function buildReadBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
 
 function buildWriteBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
 	const text = ctx.getNodeParameter('text', itemIndex) as string;
-	const extractionLogic = ctx.getNodeParameter('extractionLogic', itemIndex) as string;
 	const traceId = ctx.getNodeParameter('traceId', itemIndex) as string;
 
 	const body: IDataObject = {
 		text,
-		extraction_logic: extractionLogic,
+		...extractionLogicField(),
 	};
 
 	if (traceId.trim() !== '') {
@@ -430,7 +454,8 @@ const writeFields: INodeProperties[] = [
 		name: 'extractionLogic',
 		type: 'options',
 		default: 'fast',
-		description: 'Extraction quality/performance mode',
+		description:
+			'Writes use deep extraction, whichever choice is saved. The option is kept so existing workflows keep working; Fast has no effect.',
 		options: [
 			{
 				name: 'Deep',
@@ -439,6 +464,7 @@ const writeFields: INodeProperties[] = [
 			{
 				name: 'Fast',
 				value: 'fast',
+				description: 'Has no effect: the write uses deep extraction',
 			},
 		],
 		displayOptions: {
@@ -519,7 +545,8 @@ const createInstanceFields: INodeProperties[] = [
 		name: 'schemaFormat',
 		type: 'options',
 		default: 'yml',
-		description: 'Schema payload format sent to Xmemory',
+		description:
+			'The format the XMD schema is written in. JSON Schema input under JSON is deprecated and shows a warning.',
 		options: [
 			{
 				name: 'YAML',
@@ -528,6 +555,7 @@ const createInstanceFields: INodeProperties[] = [
 			{
 				name: 'JSON',
 				value: 'json',
+				description: 'XMD written as JSON',
 			},
 		],
 		displayOptions: {
@@ -609,6 +637,8 @@ export class Xmemory implements INodeType {
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			// Hoisted so the catch block can name the operation when formatting errors.
 			let operation: XmemoryOperation | undefined;
+			// The request's hints, which n8n shows only when the node succeeds: an error carries them too.
+			const hints: string[] = [];
 			try {
 				operation = this.getNodeParameter('operation', itemIndex) as XmemoryOperation;
 				const credentials = (await this.getCredentials('xmemoryApi')) as XmemoryCredentials;
@@ -616,6 +646,9 @@ export class Xmemory implements INodeType {
 				const baseUrl = credentials.baseUrl.replace(/\/$/, '');
 				let endpoint: string;
 				let body: IDataObject;
+				// Create Instance's body goes as JSON text of its own (`requestBody`), so XMD written as JSON keeps
+				// each number's token.
+				let asText = false;
 
 				if (operation === 'write') {
 					const instanceId = this.getNodeParameter('instanceId', itemIndex) as string;
@@ -641,15 +674,24 @@ export class Xmemory implements INodeType {
 						);
 					}
 					endpoint = `/clusters/${clusterId}/instances`;
-					body = buildCreateInstanceBody(this, itemIndex);
+					body = buildCreateInstanceBody(this, itemIndex, (message) => hints.push(message));
+					asText = true;
 				}
 
-				const requestOptions: IHttpRequestOptions = {
-					method: 'POST',
-					url: `${baseUrl}${endpoint}`,
-					body,
-					json: true,
-				};
+				const requestOptions: IHttpRequestOptions = asText
+					? {
+							method: 'POST',
+							url: `${baseUrl}${endpoint}`,
+							body: requestBody(body),
+							headers: { 'Content-Type': 'application/json' },
+							json: true,
+						}
+					: {
+							method: 'POST',
+							url: `${baseUrl}${endpoint}`,
+							body,
+							json: true,
+						};
 
 				const response = (await this.helpers.httpRequestWithAuthentication.call(
 					this,
@@ -662,9 +704,25 @@ export class Xmemory implements INodeType {
 				// below; this covers an envelope that carries `errors` alongside a 2xx status.
 				const errors = response.errors ?? [];
 				if (errors.length > 0) {
-					throw new NodeOperationError(this.getNode(), formatXmemoryError(errors[0], operation), {
+					const rejection = rejectionDetails(errors[0]);
+					const message = formatXmemoryError(errors[0], operation);
+					if (this.continueOnFail()) {
+						returnData.push({
+							json: errorItem(message, rejection, hints),
+							pairedItem: { item: itemIndex },
+						});
+						continue;
+					}
+					throw new NodeOperationError(this.getNode(), message, {
 						itemIndex,
+						description: errorDescription(rejection, hints),
 					});
+				}
+
+				// A write the API stored can come back with warnings; each is shown to the workflow
+				// author.
+				for (const message of warningMessages(response.warnings)) {
+					this.addExecutionHints({ message, type: 'warning', location: 'outputPane' });
 				}
 
 				// Unwrap the envelope so downstream nodes receive the operation payload
@@ -692,15 +750,11 @@ export class Xmemory implements INodeType {
 					structuredErrors !== undefined
 						? formatXmemoryError(structuredErrors[0], operation)
 						: (error as Error).message;
+				// A rejected write's error may carry `details.rejection`.
+				const rejection = rejectionDetails(structuredErrors?.[0]);
 
 				if (this.continueOnFail()) {
-					returnData.push({
-						json: {
-							status: 'error',
-							error: message,
-						},
-						pairedItem: { item: itemIndex },
-					});
+					returnData.push({ json: errorItem(message, rejection, hints), pairedItem: { item: itemIndex } });
 					continue;
 				}
 
@@ -716,7 +770,18 @@ export class Xmemory implements INodeType {
 				// instead of the bare HTTP error while keeping the HTTP status/body via NodeApiError.
 				// These are non-retryable by contract; we only clarify them and add no retry logic.
 				if (structuredErrors !== undefined) {
-					throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex, message });
+					const description = errorDescription(rejection, hints);
+					// The HTTP helper's own NodeApiError comes back unchanged from the constructor, so the
+					// legible message and the rejection are set on it before it is rethrown.
+					if (error instanceof NodeApiError) {
+						error.message = message;
+						if (description !== undefined) {
+							error.description = description;
+						}
+						error.context.itemIndex = itemIndex;
+						throw new NodeApiError(this.getNode(), error as unknown as JsonObject);
+					}
+					throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex, message, description });
 				}
 
 				throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex });
