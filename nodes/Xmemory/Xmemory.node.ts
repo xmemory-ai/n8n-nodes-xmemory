@@ -14,6 +14,10 @@ import {
 	type JsonObject,
 } from 'n8n-workflow';
 
+import { instanceSchemaBody, type SchemaFormat } from './instanceSchema';
+import { rejectionDetails, warningMessages } from './rejection';
+import { extractionLogicField } from './writeBody';
+
 type XmemoryCredentials = {
 	baseUrl: string;
 	token: string;
@@ -37,6 +41,7 @@ type XmemoryApiResponse = IDataObject & {
 	ids?: string[];
 	items?: IDataObject[];
 	errors?: XmemoryApiError[];
+	warnings?: XmemoryApiError[];
 	console_url?: string | null;
 };
 
@@ -125,7 +130,7 @@ function extractXmemoryErrors(error: unknown): XmemoryApiError[] | undefined {
 
 function buildCreateInstanceBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
 	const name = ctx.getNodeParameter('instanceName', itemIndex) as string;
-	const schemaFormat = ctx.getNodeParameter('schemaFormat', itemIndex) as 'json' | 'yml';
+	const schemaFormat = ctx.getNodeParameter('schemaFormat', itemIndex) as SchemaFormat;
 	const schemaText = ctx.getNodeParameter('schemaText', itemIndex) as string;
 
 	// Xmemory requires a valid XMD schema to create an instance; an empty schema is
@@ -141,10 +146,9 @@ function buildCreateInstanceBody(ctx: IExecuteFunctions, itemIndex: number): IDa
 
 	return {
 		name,
-		instance_schema:
-			schemaFormat === 'json'
-				? { json_schema: { value: schemaText } }
-				: { yml: { value: schemaText } },
+		instance_schema: instanceSchemaBody(schemaFormat, schemaText, (message) =>
+			ctx.addExecutionHints({ message, type: 'warning', location: 'outputPane' }),
+		),
 	};
 }
 
@@ -200,7 +204,7 @@ function buildWriteBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject 
 
 	const body: IDataObject = {
 		text,
-		extraction_logic: extractionLogic,
+		...extractionLogicField(extractionLogic),
 	};
 
 	if (traceId.trim() !== '') {
@@ -430,7 +434,8 @@ const writeFields: INodeProperties[] = [
 		name: 'extractionLogic',
 		type: 'options',
 		default: 'fast',
-		description: 'Extraction quality/performance mode',
+		description:
+			'Writes use deep extraction. The option is kept so existing workflows keep working; Fast has no effect.',
 		options: [
 			{
 				name: 'Deep',
@@ -439,6 +444,7 @@ const writeFields: INodeProperties[] = [
 			{
 				name: 'Fast',
 				value: 'fast',
+				description: 'Has no effect: the write uses deep extraction',
 			},
 		],
 		displayOptions: {
@@ -519,7 +525,8 @@ const createInstanceFields: INodeProperties[] = [
 		name: 'schemaFormat',
 		type: 'options',
 		default: 'yml',
-		description: 'Schema payload format sent to Xmemory',
+		description:
+			'The format the XMD schema is written in. JSON Schema input under JSON is deprecated and shows a warning.',
 		options: [
 			{
 				name: 'YAML',
@@ -528,6 +535,7 @@ const createInstanceFields: INodeProperties[] = [
 			{
 				name: 'JSON',
 				value: 'json',
+				description: 'XMD written as JSON',
 			},
 		],
 		displayOptions: {
@@ -662,9 +670,17 @@ export class Xmemory implements INodeType {
 				// below; this covers an envelope that carries `errors` alongside a 2xx status.
 				const errors = response.errors ?? [];
 				if (errors.length > 0) {
+					const rejection = rejectionDetails(errors[0]);
 					throw new NodeOperationError(this.getNode(), formatXmemoryError(errors[0], operation), {
 						itemIndex,
+						description: rejection !== undefined ? JSON.stringify(rejection, null, 2) : undefined,
 					});
+				}
+
+				// A write the API stored can come back with warnings; each is shown to the workflow
+				// author.
+				for (const message of warningMessages(response.warnings)) {
+					this.addExecutionHints({ message, type: 'warning', location: 'outputPane' });
 				}
 
 				// Unwrap the envelope so downstream nodes receive the operation payload
@@ -692,12 +708,15 @@ export class Xmemory implements INodeType {
 					structuredErrors !== undefined
 						? formatXmemoryError(structuredErrors[0], operation)
 						: (error as Error).message;
+				// A rejected write's error may carry `details.rejection`.
+				const rejection = rejectionDetails(structuredErrors?.[0]);
 
 				if (this.continueOnFail()) {
 					returnData.push({
 						json: {
 							status: 'error',
 							error: message,
+							...(rejection !== undefined ? { rejection } : {}),
 						},
 						pairedItem: { item: itemIndex },
 					});
@@ -716,7 +735,11 @@ export class Xmemory implements INodeType {
 				// instead of the bare HTTP error while keeping the HTTP status/body via NodeApiError.
 				// These are non-retryable by contract; we only clarify them and add no retry logic.
 				if (structuredErrors !== undefined) {
-					throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex, message });
+					throw new NodeApiError(this.getNode(), error as JsonObject, {
+						itemIndex,
+						message,
+						description: rejection !== undefined ? JSON.stringify(rejection, null, 2) : undefined,
+					});
 				}
 
 				throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex });

@@ -12,8 +12,8 @@ Check out [installation guide](https://xmemory.ai/n8n) and register your interes
 
 ## Operations
 
-- `Create Instance`: Calls `POST /clusters/{cluster_id}/instances`. Pick a **Cluster** (from the list by name, or by ID), and provide an **Instance Name** and a valid XMD **Schema** (JSON or YAML). Xmemory requires a schema to create an instance.
-- `Write`: Calls `POST /instances/{instance_id}/write`. Writes text into memory using the instance schema. `Fast` (default) and `deep` extraction modes are supported. Optionally pass a **Trace ID**.
+- `Create Instance`: Calls `POST /clusters/{cluster_id}/instances`. Pick a **Cluster** (from the list by name, or by ID), and provide an **Instance Name** and a valid XMD **Schema**, written as YAML or as JSON. Xmemory requires a schema to create an instance. Under **Schema Format** JSON, text whose top level holds `objects` is sent as XMD; any other JSON, such as a JSON Schema, is sent as before and shows a deprecation warning.
+- `Write`: Calls `POST /instances/{instance_id}/write`. Writes text into memory using the instance schema, with deep extraction. The **Extraction Logic** option is kept for existing workflows; its Fast choice has no effect. Optionally pass a **Trace ID**.
 - `Read`: Calls `POST /instances/{instance_id}/read`. Queries memory using a free-form natural-language query. Supported modes: `single-answer` (short summary), `raw-tables` (structured SQL-like representation), `xresponse` (schema-based structured response). Optionally restrict the read to specific objects via **Scope Objects** (identified by their user-defined primary key) together with a **Relations Scope** (`no_relations` or `all_relations`), and pass a **Trace ID**.
 
 Every operation returns the xmemory API payload directly: the response envelope (`{ids, items, errors, console_url}`) is unwrapped, so downstream nodes receive the operation result (read result, `write_id`, created instance, …). Errors are raised as node errors.
@@ -29,6 +29,10 @@ When the xmemory accounts API rejects a call, the node turns the structured erro
 - **Quota exhausted** (`HTTP 402`, code `QUOTA_EXCEEDED`): the message notes the daily or monthly limit and, when the server provides one, a `retry after Ns` hint. This is **not** retried automatically — the tenant has used up its plan allowance.
 - **Trial ended / subscription lapsed** (`HTTP 402`, code `TRIAL_ENDED`): the message hints to subscribe to continue. Not retryable.
 - **Rate limited** (`HTTP 429`, code `RATE_LIMITED`): a genuine velocity limit; the message labels it as such. n8n's HTTP layer may itself retry `429`s, but the node adds no extra retry logic.
+
+### How a rejected write surfaces
+
+When the API rejects a write (code `VALIDATION_ERROR`), the node error shows the API's message and, when the API sends them, its `rejection` details. With **Continue On Fail**, the output item carries them as `rejection`. A warning that a stored write comes back with is shown as an execution hint.
 
 If you enable workflow-level **Retry On Fail**, note that quota and trial errors are not transient and will keep failing until the underlying account state changes.
 

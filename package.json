@@ -1,6 +1,6 @@
 {
     "name": "n8n-nodes-xmemory",
-    "version": "0.10.0",
+    "version": "0.11.0",
     "description": "n8n node for xmemory read/write operations",
     "license": "MIT",
     "homepage": "https://github.com/xmemory-ai/n8n-nodes-xmemory",
@@ -29,6 +29,7 @@
         "lint": "n8n-node lint",
         "lint:fix": "n8n-node lint --fix",
         "check:codex": "node scripts/check-codex.mjs",
+        "test": "node --test test/*.test.cjs",
         "release": "n8n-node release",
         "prepack": "npm run build",
         "prepublishOnly": "n8n-node prerelease"
