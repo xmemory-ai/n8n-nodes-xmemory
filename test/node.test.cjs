@@ -111,14 +111,19 @@ test('Continue On Fail keeps the rejection of a write refused over HTTP', async 
 
 for (const choice of ['fast', 'deep']) {
 	test(`a write whose saved Extraction Logic is ${choice} sends deep extraction`, async () => {
-		const { requests } = await run({ ...WRITE, extractionLogic: choice }, () => ({ items: [{ write_id: 'w1' }] }));
+		const { requests, thrown, output } = await run({ ...WRITE, extractionLogic: choice }, () => ({
+			items: [{ write_id: 'w1' }],
+		}));
 		assert.equal(requests.length, 1);
 		assert.equal(requests[0].body.extraction_logic, 'deep');
+		// The write succeeds: nothing thrown once its request is sent, and its id in the output.
+		assert.equal(thrown, undefined);
+		assert.equal(output[0][0].json.write_id, 'w1');
 	});
 }
 
 test("a stored write's warnings become hints, each in its order, beside the write's output", async () => {
-	const { hints, output } = await run(WRITE, () => ({
+	const { hints, output, thrown } = await run(WRITE, () => ({
 		items: [{ write_id: 'w1' }],
 		warnings: [
 			{ code: 'EXAMPLE_WARNING', message: 'A first note on the write.' },
@@ -126,6 +131,7 @@ test("a stored write's warnings become hints, each in its order, beside the writ
 		],
 	}));
 	assert.deepEqual(hints, ['A first note on the write.', 'A second note on the write.']);
+	assert.equal(thrown, undefined);
 	assert.deepEqual(output, [[{ json: { write_id: 'w1' }, pairedItem: { item: 0 } }]]);
 });
 
@@ -133,21 +139,25 @@ const CREATE = { operation: 'create_instance', clusterId: 'c1', instanceName: 'T
 
 test('Create Instance sends XMD written as JSON as the parsed object', async () => {
 	const schema = { objects: { Ticket: { fields: { code: { type: 'str', required: true } }, primary_key: ['code'] } } };
-	const { requests, hints } = await run({ ...CREATE, schemaText: JSON.stringify(schema) }, () => ({
+	const { requests, hints, thrown, output } = await run({ ...CREATE, schemaText: JSON.stringify(schema) }, () => ({
 		items: [{ id: 'inst-1' }],
 	}));
 	assert.deepEqual(JSON.parse(requests[0].body).instance_schema, { yml: { value: schema } });
 	assert.equal(requests[0].headers['Content-Type'], 'application/json');
 	assert.deepEqual(hints, []);
+	assert.equal(thrown, undefined);
+	assert.equal(output[0][0].json.id, 'inst-1');
 });
 
 test('Create Instance sends each number of XMD written as JSON by its own token', async () => {
 	const text =
 		'{"objects": {"Gauge": {"fields": {"weight": {"type": "float", "default": 1.0}, ' +
 		'"serial": {"type": "int", "default": 9007199254740993}}, "primary_key": ["serial"]}}}';
-	const { requests } = await run({ ...CREATE, schemaText: text }, () => ({ items: [{ id: 'inst-1' }] }));
+	const { requests, thrown, output } = await run({ ...CREATE, schemaText: text }, () => ({ items: [{ id: 'inst-1' }] }));
 	assert.ok(requests[0].body.includes('"weight": {"type": "float", "default": 1.0}'), requests[0].body);
 	assert.ok(requests[0].body.includes('"default": 9007199254740993}'), requests[0].body);
+	assert.equal(thrown, undefined);
+	assert.equal(output[0][0].json.id, 'inst-1');
 });
 
 test("Create Instance's deprecation hint reaches the error when the API refuses the schema", async () => {
