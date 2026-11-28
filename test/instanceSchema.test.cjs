@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { instanceSchemaBody, JSON_SCHEMA_DEPRECATION } = require('../dist/nodes/Xmemory/instanceSchema.js');
 
 const XMD_AS_JSON = JSON.stringify({
-	objects: { Ticket: { fields: { code: { type: 'str', primary_key: true } } } },
+	objects: { Ticket: { fields: { code: { type: 'str', required: true } }, primary_key: ['code'] } },
 });
 const JSON_SCHEMA = JSON.stringify({
 	$schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -19,8 +19,36 @@ function body(format, text) {
 	return { schema, warnings };
 }
 
-test('XMD written as JSON is sent as yml, with no warning', () => {
-	assert.deepEqual(body('json', XMD_AS_JSON), { schema: { yml: { value: XMD_AS_JSON } }, warnings: [] });
+test('XMD written as JSON is sent as yml, as the parsed object, with no warning', () => {
+	assert.deepEqual(body('json', XMD_AS_JSON), {
+		schema: { yml: { value: JSON.parse(XMD_AS_JSON) } },
+		warnings: [],
+	});
+});
+
+test('XMD written as JSON reaches the schema with every value as JSON gave it', () => {
+	// A float JSON writes with an exponent, and strings holding characters a YAML reader folds or refuses.
+	const text =
+		'{"objects": {"Gauge": {"fields": {"reading": {"type": "float", "default": 1e-7}, ' +
+		'"note": {"type": "str", "default": "a\u0085b\u007fc"}}, "primary_key": ["note"]}}}';
+	const fields = body('json', text).schema.yml.value.objects.Gauge.fields;
+	assert.equal(fields.reading.default, 1e-7);
+	assert.equal(fields.note.default, 'a\u0085b\u007fc');
+});
+
+test('a JSON Schema using objects as an annotation of its own keeps json_schema and warns once', () => {
+	for (const document of [
+		{ type: 'object', properties: { code: { type: 'string' } }, objects: { source: 'CRM' } },
+		{ $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', objects: {} },
+		{ $defs: { code: { type: 'string' } }, objects: { source: 'CRM' } },
+	]) {
+		const text = JSON.stringify(document);
+		assert.deepEqual(
+			body('json', text),
+			{ schema: { json_schema: { value: text } }, warnings: [JSON_SCHEMA_DEPRECATION] },
+			text,
+		);
+	}
 });
 
 test('a JSON Schema keeps json_schema and warns once', () => {

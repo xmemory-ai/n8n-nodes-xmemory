@@ -128,7 +128,11 @@ function extractXmemoryErrors(error: unknown): XmemoryApiError[] | undefined {
 	return undefined;
 }
 
-function buildCreateInstanceBody(ctx: IExecuteFunctions, itemIndex: number): IDataObject {
+function buildCreateInstanceBody(
+	ctx: IExecuteFunctions,
+	itemIndex: number,
+	hinted: (message: string) => void,
+): IDataObject {
 	const name = ctx.getNodeParameter('instanceName', itemIndex) as string;
 	const schemaFormat = ctx.getNodeParameter('schemaFormat', itemIndex) as SchemaFormat;
 	const schemaText = ctx.getNodeParameter('schemaText', itemIndex) as string;
@@ -146,9 +150,26 @@ function buildCreateInstanceBody(ctx: IExecuteFunctions, itemIndex: number): IDa
 
 	return {
 		name,
-		instance_schema: instanceSchemaBody(schemaFormat, schemaText, (message) =>
-			ctx.addExecutionHints({ message, type: 'warning', location: 'outputPane' }),
-		),
+		instance_schema: instanceSchemaBody(schemaFormat, schemaText, (message) => {
+			ctx.addExecutionHints({ message, type: 'warning', location: 'outputPane' });
+			hinted(message);
+		}),
+	};
+}
+
+// A failed item's description: the rejection's details when the API sent them, and the request's hints.
+function errorDescription(rejection: IDataObject | undefined, hints: string[]): string | undefined {
+	const parts = [...(rejection !== undefined ? [JSON.stringify(rejection, null, 2)] : []), ...hints];
+	return parts.length > 0 ? parts.join('\n\n') : undefined;
+}
+
+// The item Continue On Fail emits for a failed request: its message, its rejection, and its hints.
+function errorItem(message: string, rejection: IDataObject | undefined, hints: string[]): IDataObject {
+	return {
+		status: 'error',
+		error: message,
+		...(rejection !== undefined ? { rejection } : {}),
+		...(hints.length > 0 ? { hints: [...hints] } : {}),
 	};
 }
 
@@ -617,6 +638,8 @@ export class Xmemory implements INodeType {
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			// Hoisted so the catch block can name the operation when formatting errors.
 			let operation: XmemoryOperation | undefined;
+			// The request's hints, which n8n shows only when the node succeeds: an error carries them too.
+			const hints: string[] = [];
 			try {
 				operation = this.getNodeParameter('operation', itemIndex) as XmemoryOperation;
 				const credentials = (await this.getCredentials('xmemoryApi')) as XmemoryCredentials;
@@ -649,7 +672,7 @@ export class Xmemory implements INodeType {
 						);
 					}
 					endpoint = `/clusters/${clusterId}/instances`;
-					body = buildCreateInstanceBody(this, itemIndex);
+					body = buildCreateInstanceBody(this, itemIndex, (message) => hints.push(message));
 				}
 
 				const requestOptions: IHttpRequestOptions = {
@@ -671,9 +694,17 @@ export class Xmemory implements INodeType {
 				const errors = response.errors ?? [];
 				if (errors.length > 0) {
 					const rejection = rejectionDetails(errors[0]);
-					throw new NodeOperationError(this.getNode(), formatXmemoryError(errors[0], operation), {
+					const message = formatXmemoryError(errors[0], operation);
+					if (this.continueOnFail()) {
+						returnData.push({
+							json: errorItem(message, rejection, hints),
+							pairedItem: { item: itemIndex },
+						});
+						continue;
+					}
+					throw new NodeOperationError(this.getNode(), message, {
 						itemIndex,
-						description: rejection !== undefined ? JSON.stringify(rejection, null, 2) : undefined,
+						description: errorDescription(rejection, hints),
 					});
 				}
 
@@ -712,14 +743,7 @@ export class Xmemory implements INodeType {
 				const rejection = rejectionDetails(structuredErrors?.[0]);
 
 				if (this.continueOnFail()) {
-					returnData.push({
-						json: {
-							status: 'error',
-							error: message,
-							...(rejection !== undefined ? { rejection } : {}),
-						},
-						pairedItem: { item: itemIndex },
-					});
+					returnData.push({ json: errorItem(message, rejection, hints), pairedItem: { item: itemIndex } });
 					continue;
 				}
 
@@ -735,11 +759,18 @@ export class Xmemory implements INodeType {
 				// instead of the bare HTTP error while keeping the HTTP status/body via NodeApiError.
 				// These are non-retryable by contract; we only clarify them and add no retry logic.
 				if (structuredErrors !== undefined) {
-					throw new NodeApiError(this.getNode(), error as JsonObject, {
-						itemIndex,
-						message,
-						description: rejection !== undefined ? JSON.stringify(rejection, null, 2) : undefined,
-					});
+					const description = errorDescription(rejection, hints);
+					// The HTTP helper's own NodeApiError comes back unchanged from the constructor, so the
+					// legible message and the rejection are set on it before it is rethrown.
+					if (error instanceof NodeApiError) {
+						error.message = message;
+						if (description !== undefined) {
+							error.description = description;
+						}
+						error.context.itemIndex = itemIndex;
+						throw new NodeApiError(this.getNode(), error as unknown as JsonObject);
+					}
+					throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex, message, description });
 				}
 
 				throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex });
