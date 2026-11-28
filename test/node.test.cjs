@@ -86,9 +86,15 @@ test('a write refused over HTTP throws the legible message with the rejection, o
 });
 
 test('a write refused inside a 200 envelope stops with the legible message and the whole rejection', async () => {
-	const { thrown } = await run(WRITE, () => ({ errors: [REFUSED] }));
+	// The second item's write is refused: the error names that item, as an HTTP refusal's does.
+	const { thrown } = await run(
+		WRITE,
+		(_options, index) => (index === 0 ? { items: [{ write_id: 'w1' }] } : { errors: [REFUSED] }),
+		{ items: 2 },
+	);
 	assert.match(thrown.message, /Rejected\./);
 	assert.equal(thrown.description, JSON.stringify(REJECTION, null, 2));
+	assert.equal(thrown.context.itemIndex, 1);
 });
 
 test('Continue On Fail keeps the rejection of a write refused inside a 200 envelope', async () => {
